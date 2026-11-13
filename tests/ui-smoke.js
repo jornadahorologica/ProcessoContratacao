@@ -102,6 +102,13 @@ function montarHtml() {
   await foto('2-etapa-dfd');
 
   await esperarHash('#/processo/' + NUM + '/etapa/DFD');
+  await page.waitForSelector('#bloco-form .linha [name=quantidadeDFD]');
+  const mesmaLinha = await page.evaluate(() => {
+    const a = document.querySelector('[name=quantidadeDFD]').getBoundingClientRect();
+    const b = document.querySelector('[name=unidadeMedidaDFD]').getBoundingClientRect();
+    return Math.abs(a.top - b.top) < 5 && b.left > a.right;
+  });
+  if (!mesmaLinha) throw new Error('Quantidade e Unidade deveriam ficar na mesma linha');
 
   // Abas atualizam a URL
   for (const aba of ['documentos', 'diligencias', 'dados', 'historico']) {

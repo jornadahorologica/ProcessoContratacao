@@ -473,6 +473,19 @@ function campoHtml(c, valor, ed) {
   return '<div>' + rot + inp + (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') + sugestaoHtml(c, ed) + '</div>';
 }
 
+/** Renderiza os campos; consecutivos com o mesmo "linha" (cfg_Campos) ficam lado a lado. */
+function camposEmLinhas(campos, w, ed) {
+  var html = '';
+  for (var i = 0; i < campos.length; i++) {
+    var c = campos[i];
+    var grupo = [c];
+    while (c.linha && c.tipo !== 'secaoLei' && campos[i + 1] && campos[i + 1].linha === c.linha) grupo.push(campos[++i]);
+    var partes = grupo.map(function (x) { return campoHtml(x, w.valores[x.chave], ed); }).join('');
+    html += grupo.length > 1 ? '<div class="linha">' + partes + '</div>' : partes;
+  }
+  return html;
+}
+
 function bFormulario(w, ed) {
   if (!w.campos.length) return '';
   var secoes = w.campos.filter(function (c) { return c.tipo === 'secaoLei'; });
@@ -481,7 +494,7 @@ function bFormulario(w, ed) {
     '<span class="ajuda">' + feitas + ' de ' + secoes.length + ' seções preenchidas</span>' : '';
   return '<div class="bloco" id="bloco-form"><h3><span>Dados da etapa</span><span class="acoes">' + progresso +
     (secoes.length ? '<button class="btn sec peq" data-acao="expandirSecoes">Expandir/recolher</button>' : '') + '</span></h3>' +
-    w.campos.map(function (c) { return campoHtml(c, w.valores[c.chave], ed); }).join('') +
+    camposEmLinhas(w.campos, w, ed) +
     (ed ? '<div class="acoes barra-salvar"><button class="btn" data-acao="salvarCampos" data-raiz="#bloco-form">Salvar dados</button>' +
       '<span class="ajuda">Salve com frequência — os textos ficam guardados como rascunho até a conclusão da etapa.</span></div>' : '') + '</div>';
 }

@@ -101,7 +101,8 @@ var SCHEMA = {
   cfg_Transicoes: ['id', 'fluxoId', 'origem', 'destino', 'condicao', 'ordem:n', 'rotulo'],
   // tipo "secaoLei": seção de texto de documento (ex.: inciso do ETP); opcoes = "NSA" permite "Não se aplica".
   // valorPadrao: sugestão exibida ao usuário, ex.: "{{descricaoNecessidade}}" ou "=VALOR_SOLUCAO".
-  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao'],
+  // linha: campos consecutivos com o mesmo valor ficam lado a lado na tela (ex.: "DFD_QTD").
+  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao', 'linha'],
   // Quem assina cada tipo de documento (no SUITE). signatario aceita {{responsavelTecnico}}.
   cfg_Assinaturas: ['id', 'tipoDocumento', 'ordem:n', 'signatario', 'cargo'],
   cfg_ChecklistItens: ['id', 'fluxoId', 'etapaCodigo', 'descricao', 'obrigatorio:b', 'ordem:n'],

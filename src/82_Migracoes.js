@@ -214,6 +214,14 @@ var Migracoes = {
         // --- Sugestão do inciso IV do ETP passa a usar os novos campos
         M.ajustarCampo(F, 'ETP', 'etpQuantidades', { valorPadrao: '{{quantidadeDFD}} {{unidadeMedidaDFD}}' });
       }
+    },
+    {
+      versao: 4,
+      descricao: 'DFD: Quantidade e Unidade de medição na mesma linha',
+      aplicar: function (M) {
+        M.ajustarCampo('CONTRATACAO', 'DFD', 'quantidadeDFD', { linha: 'DFD_QTD' });
+        M.ajustarCampo('CONTRATACAO', 'DFD', 'unidadeMedidaDFD', { linha: 'DFD_QTD' });
+      }
     }
   ]
 };
