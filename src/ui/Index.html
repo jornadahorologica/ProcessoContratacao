@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= incluir('ui/Estilos') ?>
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">📁 <span id="app-nome">Processos de Contratação</span></div>
+    <nav id="menu">
+      <a href="#" data-acao="ir" data-view="painel">Painel</a>
+      <a href="#" data-acao="ir" data-view="processos">Processos</a>
+      <a href="#" data-acao="ir" data-view="novo">+ Novo processo</a>
+      <a href="#" data-acao="ir" data-view="admin" id="menu-admin" class="oculto">Administração</a>
+    </nav>
+    <div class="usuario" id="usuario"></div>
+  </header>
+  <main id="app"><div class="carregando">Carregando…</div></main>
+  <div id="toast" class="toast oculto"></div>
+  <div id="ocupado" class="ocupado oculto"><div class="spinner"></div></div>
+  <?!= incluir('ui/App') ?>
+</body>
+</html>
