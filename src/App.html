@@ -124,19 +124,106 @@ function logosExternos(tela) {
   }).join('');
 }
 
+// ------------------------------------------------------------------ rotas (URL)
+/*
+ * A URL do Web App reflete a tela atual no fragmento (#). O Apps Script não
+ * permite alterar o caminho da URL depois que a página carrega.
+ *   …/exec#/painel
+ *   …/exec#/processos
+ *   …/exec#/novo-processo
+ *   …/exec#/processo/CESOP-2026-001                (aba Fluxo, etapa atual)
+ *   …/exec#/processo/CESOP-2026-001/etapa/DFD      (etapa específica)
+ *   …/exec#/processo/CESOP-2026-001/documentos     (também diligencias, dados, historico)
+ *   …/exec#/admin
+ * Os links podem ser copiados/compartilhados e os botões Voltar/Avançar funcionam.
+ */
+var ABAS = ['fluxo', 'documentos', 'diligencias', 'dados', 'historico'];
+var Rotas = {
+  _atual: null,
+  _historico: function () { return window.google && google.script && google.script.history; },
+
+  /** Monta o fragmento a partir do estado atual. */
+  montar: function () {
+    switch (S.view) {
+      case 'processos': return '/processos';
+      case 'novo': return '/novo-processo';
+      case 'admin': return '/admin';
+      case 'processo': {
+        var num = S.det && S.det.processo && S.det.processo.id === S.procId ? S.det.processo.numero : S.procId;
+        var base = '/processo/' + encodeURIComponent(num);
+        if (S.aba && S.aba !== 'fluxo') return base + '/' + S.aba;
+        var cod = S.tar && S.tar.tarefa && S.tar.tarefa.id === S.tarefaId ? S.tar.tarefa.etapaCodigo : '';
+        return base + (cod ? '/etapa/' + encodeURIComponent(cod) : '');
+      }
+      default: return '/painel';
+    }
+  },
+
+  /** Interpreta um fragmento. Retorna {view, params} ou null se inválido. */
+  ler: function (hash) {
+    var partes = String(hash || '').replace(/^#/, '').split('/').filter(String).map(decodeURIComponent);
+    var simples = { '': 'painel', painel: 'painel', processos: 'processos', 'novo-processo': 'novo', admin: 'admin' };
+    if (partes.length <= 1 && simples.hasOwnProperty(partes[0] || '')) return { view: simples[partes[0] || ''], params: {} };
+    if (partes[0] === 'processo' && partes[1]) {
+      var p = { procId: partes[1], tarefaId: null, etapaRota: null, aba: 'fluxo' };
+      if (partes[2] === 'etapa' && partes[3]) p.etapaRota = partes[3];
+      else if (partes[2] && ABAS.indexOf(partes[2]) >= 0) p.aba = partes[2];
+      return { view: 'processo', params: p };
+    }
+    return null;
+  },
+
+  /** Atualiza a URL se a tela mudou (substituir = não cria entrada no histórico). */
+  atualizar: function (substituir) {
+    var h = this.montar();
+    if (h === this._atual) return;
+    var primeira = this._atual === null;
+    this._atual = h;
+    var hist = this._historico();
+    if (hist) hist[substituir || primeira ? 'replace' : 'push'](null, {}, h);
+    else if (substituir || primeira) history.replaceState(null, '', '#' + h);
+    else location.hash = h;
+  },
+
+  /** Abre a tela correspondente a um fragmento (carga inicial, Voltar/Avançar). */
+  aplicar: function (hash) {
+    var r = this.ler(hash);
+    if (!r) { toast('Endereço não encontrado. Abrindo o painel.', true); r = { view: 'painel', params: {} }; }
+    this._atual = String(hash || '').replace(/^#/, '') || null;
+    return ir(r.view, r.params);
+  },
+
+  iniciar: function () {
+    var self = this;
+    var hist = this._historico();
+    if (hist) {
+      hist.setChangeHandler(function (e) { self.aplicar(e.location && e.location.hash); });
+      google.script.url.getLocation(function (loc) { self.aplicar(loc.hash); });
+    } else {
+      window.addEventListener('popstate', function () { self.aplicar(location.hash); });
+      self.aplicar(location.hash);
+    }
+  }
+};
+
 // ------------------------------------------------------------------ navegação
 function ir(view, params) {
   S.view = view;
+  S.autoSelecionada = false;
+  if (view !== 'processo') { S.det = null; S.tar = null; }
   if (params) for (var k in params) S[k] = params[k];
   $$('#menu a').forEach(function (a) { a.classList.toggle('ativo', a.dataset.view === view); });
   app('<div class="carregando">Carregando…</div>');
   var r = { painel: vPainel, processos: vProcessos, novo: vNovo, processo: vProcesso, admin: vAdmin }[view];
-  return Promise.resolve(r()).catch(function (e) {
+  return Promise.resolve(r()).then(function () {
+    // Etapa escolhida automaticamente (etapa atual): substitui em vez de criar outra entrada no histórico
+    Rotas.atualizar(view === 'processo' && S.autoSelecionada);
+  }).catch(function (e) {
     app('<div class="card"><b>Erro:</b> ' + esc(e.message) + '</div>');
   });
 }
 function abrirProcesso(id, tarefaId, aba) {
-  return ir('processo', { procId: id, tarefaId: tarefaId || null, aba: aba || 'fluxo' });
+  return ir('processo', { procId: id, tarefaId: tarefaId || null, etapaRota: null, aba: aba || 'fluxo' });
 }
 
 // ------------------------------------------------------------------ PAINEL
@@ -228,6 +315,7 @@ function vNovo() {
 function vProcesso() {
   return api('detalharProcesso', S.procId).then(function (det) {
     S.det = det;
+    S.procId = det.processo.id; // a URL pode trazer o número; daqui em diante usa o id interno
     var p = det.processo;
     var gestao = ehGestor() ? (
       p.status === 'EM_ANDAMENTO' ? '<button class="btn sec peq" data-acao="statusProcesso" data-status="SUSPENSO">Suspender</button> ' +
@@ -258,7 +346,15 @@ function renderAba() {
 // ---------- aba Fluxo: linha do tempo + área de trabalho da etapa
 function abaFluxo(alvo) {
   var det = S.det;
+  S.autoSelecionada = false;
+  if (S.etapaRota) {
+    var daRota = det.linhaDoTempo.filter(function (e) { return e.codigo === S.etapaRota && e.tarefaId; })[0];
+    if (daRota) S.tarefaId = daRota.tarefaId;
+    else toast('A etapa "' + S.etapaRota + '" ainda não foi iniciada neste processo.', true);
+    S.etapaRota = null;
+  }
   if (!S.tarefaId) {
+    S.autoSelecionada = true;
     var ativa = det.tarefas.filter(function (t) { return t.status === 'ABERTA' || t.status === 'AGUARDANDO_RETORNO'; })[0];
     var ultima = det.tarefas.filter(function (t) { return t.tipo === 'TAREFA' || t.tipo === 'DECISAO'; }).slice(-1)[0];
     S.tarefaId = (ativa || ultima || {}).id || null;
@@ -553,10 +649,10 @@ function vAdmin() {
 
 // ------------------------------------------------------------------ AÇÕES (cliques)
 function recarregarProcesso(msg) {
-  return api('detalharProcesso', S.procId).then(function (det) {
-    S.det = det;
-    return vProcesso();
-  }).then(function () { if (msg) toast(msg); });
+  return vProcesso().then(function () {
+    Rotas.atualizar(true);
+    if (msg) toast(msg);
+  });
 }
 
 var ACOES = {
@@ -566,9 +662,9 @@ var ACOES = {
   aba: function (d) {
     S.aba = d.aba;
     $$('.abas a').forEach(function (a) { a.classList.toggle('ativo', a.dataset.aba === d.aba); });
-    renderAba();
+    Promise.resolve(renderAba()).then(function () { Rotas.atualizar(); });
   },
-  selTarefa: function (d) { carregarTarefa(d.tarefa); },
+  selTarefa: function (d) { carregarTarefa(d.tarefa).then(function () { Rotas.atualizar(); }); },
   filtrar: function () { S.filtro = { texto: $('#f-texto').value, status: $('#f-status').value }; ir('processos'); },
 
   criarProcesso: function () {
@@ -724,7 +820,7 @@ api('contexto').then(function (ctx) {
   $('#app-nome').textContent = ctx.app;
   $('#usuario').textContent = ctx.usuario.nome + ' · ' + ctx.usuario.papel;
   if (ctx.usuario.papel === 'ADMIN') $('#menu-admin').classList.remove('oculto');
-  ir('painel');
+  Rotas.iniciar();
 }).catch(function (e) {
   app('<div class="card"><h2>Não foi possível entrar</h2><p>' + esc(e.message) + '</p></div>');
 });

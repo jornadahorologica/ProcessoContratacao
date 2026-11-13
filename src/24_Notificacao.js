@@ -19,7 +19,8 @@ var Notificacao = {
       subject: '[' + proc.numero + '] Nova etapa: ' + tarefa.nome,
       htmlBody: '<p>O processo <b>' + proc.numero + ' — ' + proc.titulo + '</b> chegou à etapa <b>' +
         tarefa.nome + '</b>' + (tarefa.prazo ? ' (prazo: ' + tarefa.prazo + ')' : '') + '.</p>' +
-        (this.link() ? '<p><a href="' + this.link() + '">Abrir o sistema</a></p>' : '')
+        (this.link() ? '<p><a href="' + this.link() + '#/processo/' + encodeURIComponent(proc.numero) + '/etapa/' +
+          encodeURIComponent(tarefa.etapaCodigo) + '">Abrir a etapa no sistema</a></p>' : '')
     });
   },
 

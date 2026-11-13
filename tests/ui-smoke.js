@@ -35,10 +35,19 @@ function backend() {
 function montarHtml() {
   const ler = (n) => fs.readFileSync(path.join(SRC, n + '.html'), 'utf8');
   const ponte = `<script>
-    window.google = { script: { run: (function mk(ok, fail) {
-      return { withSuccessHandler: (f) => mk(f, fail), withFailureHandler: (f) => mk(ok, f),
-        apiCall: (m, a) => window.__api(m, a).then(ok, fail) };
-    })() } };
+    // Simula google.script.run / history / url do Apps Script
+    window.google = { script: {
+      run: (function mk(ok, fail) {
+        return { withSuccessHandler: (f) => mk(f, fail), withFailureHandler: (f) => mk(ok, f),
+          apiCall: (m, a) => window.__api(m, a).then(ok, fail) };
+      })(),
+      history: {
+        push: (st, par, h) => history.pushState(null, '', '#' + h),
+        replace: (st, par, h) => history.replaceState(null, '', '#' + h),
+        setChangeHandler: (fn) => window.addEventListener('popstate', () => fn({ location: { hash: location.hash.slice(1) } }))
+      },
+      url: { getLocation: (cb) => setTimeout(() => cb({ hash: location.hash.slice(1), parameter: {} })) }
+    } };
   </script>`;
   return ler('Index')
     .replace("<?!= incluir('Estilos') ?>", () => ler('Estilos')) // função: evita a interpretação de $$ e $'
@@ -54,12 +63,18 @@ function montarHtml() {
   page.on('console', (m) => process.env.DEBUG && console.log('[browser]', m.text()));
   page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'teste' : undefined));
   await page.exposeFunction('__api', (m, a) => api(m, a));
-  await page.setContent(montarHtml());
+  const html = montarHtml();
+  await page.route('http://app.local/**', (r) => r.fulfill({ contentType: 'text/html', body: html }));
+  await page.goto('http://app.local/exec');
+  const hash = () => page.evaluate(() => decodeURIComponent(location.hash));
+  const esperarHash = (h) => page.waitForFunction((esp) => decodeURIComponent(location.hash) === esp, h);
   const foto = async (n) => saida && page.screenshot({ path: path.join(saida, n + '.png'), fullPage: true });
   const esperarCarregar = () => page.waitForFunction(() => !document.querySelector('.carregando') && document.querySelector('#ocupado').classList.contains('oculto'));
 
   await page.waitForSelector('.kpis');
-  await page.click('text=+ Novo processo');
+  await esperarHash('#/painel');
+  await page.click('#menu a[data-view=novo]');
+  await esperarHash('#/novo-processo');
   await page.fill('[name=titulo]', 'Novo contrato SGS');
   await page.fill('[name=objeto]', 'Sustentação e evolução do SGS');
   await page.waitForSelector('a.logo-externo[href="https://suite.ce.gov.br/"] img');
@@ -69,6 +84,9 @@ function montarHtml() {
   await page.waitForSelector('.timeline');
   await esperarCarregar();
 
+  // URL do processo: número + etapa atual
+  await esperarHash('#/processo/CESOP-' + new Date().getFullYear() + '-001/etapa/ABRIR_SUITE');
+  const NUM = 'CESOP-' + new Date().getFullYear() + '-001';
   // Etapa 1: Abrir processo SUITE (logo do SUITE no canto superior direito)
   await page.waitForSelector('#area-trabalho a.logo-externo[target=_blank] img');
   await foto('1-abrir-suite');
@@ -81,18 +99,44 @@ function montarHtml() {
   await esperarCarregar();
   await foto('2-etapa-dfd');
 
-  // Abas
-  for (const aba of ['documentos', 'diligencias', 'dados', 'historico', 'fluxo']) {
+  await esperarHash('#/processo/' + NUM + '/etapa/DFD');
+
+  // Abas atualizam a URL
+  for (const aba of ['documentos', 'diligencias', 'dados', 'historico']) {
     await page.click(`[data-aba=${aba}]`);
     await esperarCarregar();
+    await esperarHash('#/processo/' + NUM + '/' + aba);
   }
-  await page.click('text=Painel');
+  // Voltar do navegador retorna à aba anterior
+  await page.goBack();
+  await esperarHash('#/processo/' + NUM + '/dados');
+  await page.waitForSelector('#form-dados');
+  // Clique numa etapa concluída da linha do tempo
+  await page.click('[data-aba=fluxo]');
+  await esperarCarregar();
+  await page.click('.timeline .item:has-text("Abrir processo SUITE")');
+  await esperarHash('#/processo/' + NUM + '/etapa/ABRIR_SUITE');
+  // Link direto (copiado/compartilhado) abre a etapa indicada
+  await page.goto('http://app.local/exec#/processo/' + NUM + '/etapa/DFD');
+  await page.reload();
+  await page.waitForFunction(() => /Elaborar DFD/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
+  await page.goto('http://app.local/exec#/processo/' + NUM + '/documentos');
+  await page.reload();
+  await page.waitForSelector('[data-aba=documentos].ativo');
+  // Endereço inválido cai no painel
+  await page.goto('http://app.local/exec#/rota/que/nao/existe');
+  await page.reload();
+  await page.waitForSelector('.kpis');
+  await page.click('#menu a[data-view=painel]');
   await page.waitForSelector('.kanban .cartao');
   await foto('3-painel');
-  await page.click('text=Processos');
+  await page.click('#menu a[data-view=processos]');
   await page.waitForSelector('tr.clicavel');
-  await page.click('text=Administração');
+  await esperarHash('#/processos');
+  await page.click('#menu a[data-view=admin]');
   await page.waitForSelector('#form-usu');
+  await esperarHash('#/admin');
+  void hash;
 
   await browser.close();
   if (erros.length) {

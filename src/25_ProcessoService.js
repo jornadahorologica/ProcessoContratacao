@@ -142,8 +142,19 @@ var ProcessoService = {
   },
 
   /** Tudo o que a tela de detalhe precisa, em uma única chamada. */
-  detalhar: function (id) {
-    var p = repo('Processos').obterOuFalhar(id);
+  /** Aceita o id interno ou o número do processo (ex.: CESOP-2026-001, usado nas URLs). */
+  resolver: function (idOuNumero) {
+    var r = repo('Processos');
+    var p = r.obter(idOuNumero) || r.filtrar(function (x) {
+      return String(x.numero).toUpperCase() === String(idOuNumero || '').toUpperCase();
+    })[0];
+    if (!p) throw Utils.erro('Processo não encontrado: ' + idOuNumero);
+    return p;
+  },
+
+  detalhar: function (idOuNumero) {
+    var p = this.resolver(idOuNumero);
+    var id = p.id;
     var tarefas = repo('Tarefas').onde({ processoId: id });
     tarefas.sort(function (a, b) { return a.criadaEm < b.criadaEm ? -1 : 1; });
     var porEtapa = Utils.agrupar(tarefas, function (t) { return t.etapaCodigo; });

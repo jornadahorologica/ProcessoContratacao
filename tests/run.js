@@ -153,6 +153,9 @@ teste('Criação do processo: número, pastas no Drive e primeira etapa', () => 
   const ano = new Date().getFullYear();
   assert.strictEqual(p1.numero, 'CESOP-' + ano + '-001');
   assert.strictEqual(p1.responsavelTecnico, 'Daniel Boyadijan', 'responsável técnico padrão');
+  assert.strictEqual(env.ok('detalharProcesso', p1.numero).processo.id, p1.id, 'busca pelo número (URL)');
+  assert.strictEqual(env.ok('detalharProcesso', p1.numero.toLowerCase()).processo.id, p1.id);
+  assert.match(env.falha('detalharProcesso', 'CESOP-1900-999'), /não encontrado/);
   const p3 = env.ok('criarProcesso', { titulo: 'T', objeto: 'O', responsavelTecnico: 'Outra Pessoa' });
   assert.strictEqual(p3.responsavelTecnico, 'Outra Pessoa');
   assert.strictEqual(env.ok('atualizarProcesso', p3.id, { responsavelTecnico: 'Fulano' }).responsavelTecnico, 'Fulano');
