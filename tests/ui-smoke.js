@@ -132,7 +132,7 @@ function montarHtml() {
   ok('salvarCampos', t2.id, { numeroSuite: '55555/2026', dataAberturaSuite: '2026-11-10' });
   ok('concluirTarefa', t2.id, '');
   t2 = aberta('DFD');
-  ok('salvarCampos', t2.id, { unidadeDemandante: 'CESOP', grauPrioridade: 'Alta', quantidadeEstimadaDFD: '12.000 UST/ano',
+  ok('salvarCampos', t2.id, { unidadeDemandante: 'CESOP', grauPrioridade: 'Alta', quantidadeDFD: 12000, unidadeMedidaDFD: 'UST (Unidade de Serviço Técnico)',
     descricaoNecessidade: 'Garantir a continuidade da sustentação e evolução do SGS, sistema crítico para a gestão estadual.' });
   ok('abrirTarefa', t2.id).checklist.filter((i) => i.obrigatorio).forEach((i) => ok('marcarChecklist', t2.id, i.id, true));
   ok('anexarDocumento', p2.id, 'DFD', t2.id, pdf('DFD assinado.pdf'));

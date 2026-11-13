@@ -154,6 +154,51 @@ var Migracoes = {
           });
         });
       }
+    },
+    {
+      versao: 3,
+      descricao: 'DFD: checklist com um único item e quantidade dividida em Quantidade (inteiro) + Unidade de medição (lista)',
+      aplicar: function (M) {
+        var F = 'CONTRATACAO';
+
+        if (repo('cfg_Etapas').obter(F + '.DFD')) {
+          repo('cfg_Etapas').atualizar(F + '.DFD', {
+            descricao: 'Documento de Formalização da Demanda, assinado pelo Secretário da unidade demandante.'
+          });
+        }
+
+        // --- Checklist do DFD: um único item obrigatório
+        var itens = repo('cfg_ChecklistItens').filtrar(function (i) { return i.fluxoId === F && i.etapaCodigo === 'DFD'; })
+          .sort(function (a, b) { return (a.ordem || 0) - (b.ordem || 0); });
+        var ordemItem = itens.length ? itens[0].ordem : 1;
+        itens.forEach(function (i) { repo('cfg_ChecklistItens').remover(i.id); });
+        M.upsert('cfg_ChecklistItens', {
+          id: F + '.DFD.ASSINADO', fluxoId: F, etapaCodigo: 'DFD',
+          descricao: 'Documento assinado pelo Secretário da unidade demandante', obrigatorio: true, ordem: ordemItem
+        });
+
+        // --- Quantidade estimada -> Quantidade + Unidade de medição
+        var antigo = repo('cfg_Campos').filtrar(function (c) {
+          return c.fluxoId === F && c.etapaCodigo === 'DFD' && c.chave === 'quantidadeEstimadaDFD';
+        })[0];
+        var ordem = antigo ? antigo.ordem : 4;
+        if (antigo) repo('cfg_Campos').remover(antigo.id);
+        M.upsert('cfg_Campos', {
+          id: F + '.DFD.QTD', fluxoId: F, etapaCodigo: 'DFD', chave: 'quantidadeDFD', rotulo: 'Quantidade',
+          tipo: 'inteiro', obrigatorio: true, opcoes: '', ajuda: 'Somente números inteiros.', ordem: ordem, valorPadrao: ''
+        });
+        M.upsert('cfg_Campos', {
+          id: F + '.DFD.UNIDADE', fluxoId: F, etapaCodigo: 'DFD', chave: 'unidadeMedidaDFD', rotulo: 'Unidade de medição',
+          tipo: 'selecao', obrigatorio: true,
+          opcoes: 'UST (Unidade de Serviço Técnico);Ponto de Função;Hora técnica;Unidade;Licença;Usuário;Assinatura;' +
+            'Serviço;Mês;Ano;Lote',
+          ajuda: 'Lista mantida na aba cfg_Campos (coluna opcoes, separadas por ponto e vírgula).',
+          ordem: ordem + 0.5, valorPadrao: ''
+        });
+
+        // --- Sugestão do inciso IV do ETP passa a usar os novos campos
+        M.ajustarCampo(F, 'ETP', 'etpQuantidades', { valorPadrao: '{{quantidadeDFD}} {{unidadeMedidaDFD}}' });
+      }
     }
   ]
 };

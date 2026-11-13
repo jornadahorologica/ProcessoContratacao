@@ -240,6 +240,11 @@ var ProcessoService = {
       if (!permitidas[k]) return;
       var v = valores[k];
       if (permitidas[k].tipo === 'nsa') v = v === true || v === 'true' ? 'true' : 'false';
+      if (permitidas[k].tipo === 'inteiro') {
+        var bruto = String(v === null || v === undefined ? '' : v).replace(/[.\s]/g, '');
+        if (bruto !== '' && !/^\d+$/.test(bruto)) throw Utils.erro('O campo "' + permitidas[k].rotulo + '" aceita somente números inteiros.');
+        v = bruto === '' ? '' : Number(bruto);
+      }
       if (permitidas[k].tipo === 'moeda' || permitidas[k].tipo === 'numero') {
         var n = daCelula_(v, 'n');
         v = n === null ? '' : n;

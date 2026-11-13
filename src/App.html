@@ -456,6 +456,7 @@ function campoHtml(c, valor, ed) {
   var inp;
   switch (c.tipo) {
     case 'textoLongo': inp = '<textarea name="' + esc(c.chave) + '"' + dis + '>' + esc(v) + '</textarea>'; break;
+    case 'inteiro': inp = '<input type="number" step="1" min="0" inputmode="numeric" data-inteiro="1" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'numero': case 'moeda': inp = '<input type="number" step="' + (c.tipo === 'moeda' ? '0.01' : 'any') + '" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'data': inp = '<input type="date" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'email': inp = '<input type="email" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
@@ -913,6 +914,9 @@ document.addEventListener('click', function (ev) {
   if (el.type !== 'checkbox' && el.type !== 'radio') ev.preventDefault();
   var fn = ACOES[el.dataset.acao];
   if (fn) fn(el.dataset, el);
+});
+document.addEventListener('keydown', function (ev) {
+  if (ev.target.dataset && ev.target.dataset.inteiro && /^[.,eE+\-]$/.test(ev.key)) ev.preventDefault();
 });
 document.addEventListener('change', function (ev) {
   var el = ev.target.closest('[data-change]');

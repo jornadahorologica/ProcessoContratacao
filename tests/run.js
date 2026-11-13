@@ -97,7 +97,7 @@ function camposEtp(extra) {
 function ateParalelo(env, titulo) {
   const p = env.ok('criarProcesso', { titulo, objeto: 'Serviços de TI' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '123/2026', dataAberturaSuite: '2026-11-10' });
-  concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta' }, { gerar: true });
+  concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta', quantidadeDFD: 1, unidadeMedidaDFD: 'Serviço' }, { gerar: true });
   concluirSimples(env, p.id, 'CONSULTA_ETICE', { resultadoConsultaEtice: 'Favorável' });
   concluirSimples(env, p.id, 'ETP', camposEtp(), { gerar: true });
   return p;
@@ -206,7 +206,17 @@ teste('Pendências impedem concluir; campos e checklist liberam', () => {
   const dfd = tarefaAberta(env, p.id, 'DFD');
   env.ok('salvarCampos', dfd.id, { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta' });
   const pend = env.ok('abrirTarefa', dfd.id).pendencias.join(' | ');
-  assert.match(pend, /Requerimento do secretário/);
+  assert.match(pend, /Documento assinado pelo Secretário da unidade demandante/);
+  assert.match(pend, /Preencha o campo "Quantidade"/);
+  assert.match(pend, /Preencha o campo "Unidade de medição"/);
+  const w2 = env.ok('abrirTarefa', dfd.id);
+  assert.strictEqual(w2.checklist.length, 1, 'checklist do DFD com um único item');
+  assert.ok(!w2.campos.some((c) => c.chave === 'quantidadeEstimadaDFD'));
+  assert.ok(w2.campos.find((c) => c.chave === 'unidadeMedidaDFD').opcoes.includes('UST'));
+  assert.match(env.falha('salvarCampos', dfd.id, { quantidadeDFD: '10,5' }), /números inteiros/);
+  assert.match(env.falha('salvarCampos', dfd.id, { quantidadeDFD: '-3' }), /números inteiros/);
+  env.ok('salvarCampos', dfd.id, { quantidadeDFD: '12.000', unidadeMedidaDFD: 'Hora técnica' });
+  assert.strictEqual(env.ok('detalharProcesso', p.id).variaveis.quantidadeDFD, '12000');
   assert.match(pend, /DFD - Documento/);
 });
 
@@ -215,7 +225,7 @@ teste('Solicitação externa (consulta ETICE): envio → aguardando retorno → 
   env.ctx.setup();
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
-  concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta' });
+  concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta', quantidadeDFD: 1, unidadeMedidaDFD: 'Serviço' });
   const t = tarefaAberta(env, p.id, 'CONSULTA_ETICE');
   env.ok('salvarCampos', t.id, { resultadoConsultaEtice: 'Favorável' });
   const docEtice = env.ok('gerarDocumento', p.id, 'CONSULTA_ETICE', t.id);
@@ -393,7 +403,7 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   const p = env.ok('criarProcesso', { titulo: 'ETP', objeto: 'Sustentação do SGS' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '777/2026', dataAberturaSuite: '2026-11-10' });
   concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'Necessidade vinda do DFD',
-    quantidadeEstimadaDFD: '1.000 UST', grauPrioridade: 'Alta' }, { gerar: true });
+    quantidadeDFD: 1000, unidadeMedidaDFD: 'UST (Unidade de Serviço Técnico)', grauPrioridade: 'Alta' }, { gerar: true });
   concluirSimples(env, p.id, 'CONSULTA_ETICE', { resultadoConsultaEtice: 'Favorável' });
   const t = tarefaAberta(env, p.id, 'ETP');
   let w = env.ok('abrirTarefa', t.id);
@@ -408,7 +418,7 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
 
   // Sugestões vindas do DFD
   assert.strictEqual(w.sugestoes.etpNecessidade.valor, 'Necessidade vinda do DFD');
-  assert.strictEqual(w.sugestoes.etpQuantidades.valor, '1.000 UST');
+  assert.strictEqual(w.sugestoes.etpQuantidades.valor, '1000 UST (Unidade de Serviço Técnico)');
   assert.ok(!w.sugestoes.valorEstimadoEtp, 'sem propostas ainda, sem sugestão de valor');
 
   // Valor da solução: licitação = média das propostas; ETICE = proposta da ETICE
@@ -496,7 +506,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '2');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '3');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);

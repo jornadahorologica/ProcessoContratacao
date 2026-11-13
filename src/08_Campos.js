@@ -29,6 +29,7 @@ var Campos = {
       return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     }
     if (campo.tipo === 'simNao') return v === 'SIM' ? 'Sim' : v === 'NAO' ? 'Não' : v;
+    if (campo.tipo === 'inteiro' && !Utils.vazio(v)) return Number(v).toLocaleString('pt-BR');
     return String(v);
   },
 

@@ -85,7 +85,7 @@ Tudo fica nas abas `cfg_*` da planilha. Depois de editar, clique em **Administra
 |---|---|
 | `cfg_Etapas` | etapas: tipo (`TAREFA`, `DECISAO`, `PARALELO`, `JUNCAO`, `FIM`), fase, setor, prazo em dias úteis, **blocos** da tela, documento esperado |
 | `cfg_Transicoes` | ligações entre etapas, com condição opcional (ex.: `naturezaContinua == SIM`) |
-| `cfg_Campos` | campos do formulário de cada etapa (`texto`, `textoLongo`, `numero`, `moeda`, `data`, `selecao`, `simNao`, `email`) |
+| `cfg_Campos` | campos do formulário de cada etapa (`texto`, `textoLongo`, `numero`, `inteiro`, `moeda`, `data`, `selecao`, `simNao`, `email`, `secaoLei`) |
 | `cfg_ChecklistItens` | itens de checklist por etapa (obrigatórios ou não) |
 | `cfg_DocumentosTipo` | tipos de documento, subpasta de destino, **ID do modelo Google Docs**, se é exigido na instrução e condição |
 | `cfg_Pastas` | subpastas criadas para cada processo |
