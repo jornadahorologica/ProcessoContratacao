@@ -700,6 +700,33 @@ function abaHistorico(alvo) {
 }
 
 // ------------------------------------------------------------------ ADMIN
+/** Aviso (somente ADMIN) quando há atualizações de configuração não aplicadas. */
+function avisoConfiguracao() {
+  var c = S.ctx.configuracao;
+  var el = $('#aviso-config');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'aviso-config';
+    document.body.insertBefore(el, $('#app'));
+  }
+  el.innerHTML = c && c.pendentes.length
+    ? '<div class="pend acoes" style="justify-content:space-between"><span>⚠️ Há <b>' + c.pendentes.length + '</b> atualização(ões) da configuração ' +
+      'ainda não aplicada(s) na planilha (versão ' + c.versao + ' de ' + c.ultima + '). Até aplicar, as telas mostram a configuração antiga.</span>' +
+      '<button class="btn" data-acao="atualizarConfiguracao">Aplicar atualizações agora</button></div>'
+    : '';
+}
+
+function cartaoAtualizacoes() {
+  var c = S.ctx.configuracao || { versao: '?', ultima: '?', pendentes: [] };
+  return '<div class="card"><h2>Atualizações da configuração</h2>' +
+    '<p>Versão aplicada na planilha: <b>' + esc(c.versao) + '</b> de <b>' + esc(c.ultima) + '</b>.</p>' +
+    (c.pendentes.length ? '<ul>' + c.pendentes.map(function (m) { return '<li>' + esc(m.versao) + ' — ' + esc(m.descricao) + '</li>'; }).join('') + '</ul>' +
+      '<button class="btn" data-acao="atualizarConfiguracao">Aplicar atualizações</button>' :
+      '<p class="ajuda">✅ Tudo atualizado. Você também pode clicar para conferir/recriar abas e colunas.</p>' +
+      '<button class="btn sec" data-acao="atualizarConfiguracao">Verificar estrutura</button>') +
+    '<pre id="log-config" class="log oculto"></pre></div>';
+}
+
 function vAdmin() {
   return api('listarUsuarios').then(function (us) {
     app('<h1>Administração</h1><div class="grid g2"><div class="card"><h2>Usuários</h2><table><tr><th>E-mail</th><th>Nome</th><th>Setor</th><th>Papel</th><th>Ativo</th></tr>' +
@@ -716,7 +743,7 @@ function vAdmin() {
       '<p class="acoes"><a class="btn sec" target="_blank" href="' + esc(S.ctx.dbUrl) + '">Abrir planilha (banco de dados)</a>' +
       '<a class="btn sec" target="_blank" href="' + esc(S.ctx.pastaRaizUrl) + '">Abrir pasta raiz</a></p>' +
       '<p>Depois de editar a configuração, clique em:</p><button class="btn" data-acao="recarregarConfig">🔄 Recarregar configuração</button>' +
-      '<p class="ajuda">Versão ' + esc(S.ctx.versao) + '</p></div></div>');
+      '<p class="ajuda">Versão ' + esc(S.ctx.versao) + '</p></div>' + cartaoAtualizacoes() + '</div>');
   });
 }
 
@@ -887,6 +914,19 @@ var ACOES = {
       return api('contexto').then(function (c) { S.ctx = c; ir('admin'); });
     });
   },
+  atualizarConfiguracao: function () {
+    if (!confirm('Aplicar as atualizações da configuração na planilha?\nNenhum processo ou dado é apagado.')) return;
+    ocupado(api('atualizarConfiguracao'), 'Configuração atualizada.').then(function (log) {
+      return api('contexto').then(function (c) {
+        S.ctx = c;
+        avisoConfiguracao();
+        return ir(S.view === 'admin' ? 'admin' : S.view).then(function () {
+          var el = $('#log-config');
+          if (el) { el.textContent = log.join('\n'); el.classList.remove('oculto'); }
+        });
+      });
+    });
+  },
   recarregarConfig: function () {
     ocupado(api('recarregarConfig'), 'Configuração recarregada.').then(function () {
       return api('contexto').then(function (c) { S.ctx = c; });
@@ -929,6 +969,7 @@ api('contexto').then(function (ctx) {
   $('#app-nome').textContent = ctx.app;
   $('#usuario').textContent = ctx.usuario.nome + ' · ' + ctx.usuario.papel;
   if (ctx.usuario.papel === 'ADMIN') $('#menu-admin').classList.remove('oculto');
+  avisoConfiguracao();
   Rotas.iniciar();
 }).catch(function (e) {
   app('<div class="card"><h2>Não foi possível entrar</h2><p>' + esc(e.message) + '</p></div>');

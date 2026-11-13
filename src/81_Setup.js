@@ -57,6 +57,25 @@ function setup() {
   return log;
 }
 
+/**
+ * Atualiza a estrutura do banco (abas/colunas novas) e aplica as migrações
+ * pendentes da configuração. Usada pelo botão "Aplicar atualizações" da tela
+ * de Administração — dispensa executar o setup() pelo editor.
+ */
+function atualizarConfiguracao_() {
+  var ss = Db.planilha();
+  var log = [];
+  Object.keys(SCHEMA).forEach(function (nome) {
+    var r = garantirAba_(ss, nome);
+    if (!/: ok$/.test(r)) log.push(r);
+  });
+  Db._sheets = {};
+  _repos = {};
+  log = log.concat(Migracoes.executar());
+  ConfigService.limparCache();
+  return log;
+}
+
 /** Cria a aba (se necessário), acrescenta colunas que faltam e formata como texto. */
 function garantirAba_(ss, nome) {
   var sh = ss.getSheetByName(nome);

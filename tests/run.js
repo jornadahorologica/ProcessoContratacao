@@ -520,6 +520,32 @@ teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   assert.deepStrictEqual(['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas), antes);
 });
 
+teste('Administração: aplica atualizações pendentes pela tela (sem executar o setup)', () => {
+  const env = carregar();
+  env.ctx.setup();
+  // Simula uma planilha que ficou na versão 2 (checklist antigo do DFD)
+  env.estado.props.CFG_VERSAO = '2';
+  env.novaExecucao();
+  env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
+  env.ctx.ConfigService.limparCache();
+  let ctx = env.ok('contexto');
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3]);
+  const log = env.ok('atualizarConfiguracao');
+  assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
+  ctx = env.ok('contexto');
+  assert.strictEqual(ctx.configuracao.versao, 3);
+  assert.deepStrictEqual(ctx.configuracao.pendentes, []);
+  const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
+  concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
+  const w = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'DFD').id);
+  assert.deepStrictEqual(w.checklist.map((i) => i.descricao), ['Documento assinado pelo Secretário da unidade demandante']);
+  // Outros papéis não podem
+  env.ok('salvarUsuario', { email: 'ana@orgao.gov.br', nome: 'Ana', papel: 'ANALISTA' });
+  env.comoUsuario('ana@orgao.gov.br');
+  assert.match(env.falha('atualizarConfiguracao'), /permissão/);
+  assert.strictEqual(env.ok('contexto').configuracao, null);
+});
+
 // ------------------------------------------------------------------ execução
 let falhas = 0;
 testes.forEach(({ nome, fn }) => {

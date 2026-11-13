@@ -17,6 +17,7 @@ var API = {
         .map(function (x) { return { email: x.email, nome: x.nome, setor: x.setor }; }),
       metodosMapa: PesquisaPrecoService.METODOS,
       responsavelTecnicoPadrao: APP.RESPONSAVEL_TECNICO_PADRAO,
+      configuracao: u.papel === PAPEIS.ADMIN ? Migracoes.situacao() : null,
       assinaturasPorTipo: (ConfigService.carregar().cfg_Assinaturas || []).reduce(function (m, a) {
         (m[a.tipoDocumento] = m[a.tipoDocumento] || []).push({ ordem: a.ordem, signatario: a.signatario, cargo: a.cargo });
         return m;
@@ -72,7 +73,9 @@ var API = {
     ConfigService.limparCache();
     return reg;
   }],
-  recarregarConfig: ['A', function () { ConfigService.limparCache(); return true; }]
+  recarregarConfig: ['A', function () { ConfigService.limparCache(); return true; }],
+  situacaoConfiguracao: ['A', function () { return Migracoes.situacao(); }],
+  atualizarConfiguracao: ['A', function () { return atualizarConfiguracao_(); }]
 };
 
 var NIVEIS_ESCRITA = { E: true, G: true, A: true };

@@ -26,10 +26,12 @@ function backend() {
   fs.readdirSync(SRC).filter((f) => f.endsWith('.js')).sort()
     .forEach((f) => vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f }));
   ctx.setup();
-  return (metodo, args) => {
+  const fn = (metodo, args) => {
     vm.runInContext('_repos = {}; ConfigService._memo = null; Auth._usuario = null; Db._ss = null; Db._sheets = {}; Workflow._cacheAlc = null;', ctx);
     return ctx.apiCall(metodo, args);
   };
+  fn.estado = estado;
+  return fn;
 }
 
 function montarHtml() {
@@ -206,6 +208,17 @@ function montarHtml() {
   await page.waitForSelector('#form-usu');
   await esperarHash('#/admin');
   void hash;
+
+  // Atualização pendente da configuração: aviso + botão para o administrador
+  api.estado.props.CFG_VERSAO = '2';
+  await page.goto('http://app.local/exec#/admin');
+  await page.reload();
+  await page.waitForSelector('#aviso-config [data-acao=atualizarConfiguracao]');
+  await foto('6-aviso-atualizacao');
+  await page.click('#aviso-config [data-acao=atualizarConfiguracao]');
+  await page.waitForSelector('#log-config:not(.oculto)');
+  if (await page.$('#aviso-config [data-acao=atualizarConfiguracao]')) throw new Error('Aviso deveria sumir após aplicar');
+  await foto('7-atualizacao-aplicada');
 
   await browser.close();
   if (erros.length) {

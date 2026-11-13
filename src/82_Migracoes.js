@@ -16,6 +16,21 @@ var Migracoes = {
     return Number(PropertiesService.getScriptProperties().getProperty(this.PROP)) || 1;
   },
 
+  ultimaVersao: function () {
+    return this.lista.reduce(function (m, x) { return Math.max(m, x.versao); }, 1);
+  },
+
+  /** Situação para a tela de Administração. */
+  situacao: function () {
+    var atual = this.versaoAtual();
+    return {
+      versao: atual,
+      ultima: this.ultimaVersao(),
+      pendentes: this.lista.filter(function (m) { return m.versao > atual; })
+        .map(function (m) { return { versao: m.versao, descricao: m.descricao }; })
+    };
+  },
+
   executar: function () {
     var self = this;
     var log = [];
