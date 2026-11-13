@@ -34,9 +34,9 @@ function montarHtml() {
         apiCall: (m, a) => window.__api(m, a).then(ok, fail) };
     })() } };
   </script>`;
-  return ler('ui/Index')
-    .replace("<?!= incluir('ui/Estilos') ?>", () => ler('ui/Estilos')) // função: evita a interpretação de $$ e $'
-    .replace("<?!= incluir('ui/App') ?>", () => ponte + ler('ui/App'));
+  return ler('Index')
+    .replace("<?!= incluir('Estilos') ?>", () => ler('Estilos')) // função: evita a interpretação de $$ e $'
+    .replace("<?!= incluir('App') ?>", () => ponte + ler('App'));
 }
 
 (async () => {

@@ -4,7 +4,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ UI – Web App (HtmlService, SPA em JS puro)  src/ui/*     │
+│ UI – Web App (HtmlService, SPA em JS puro)  Index/App      │
 └───────────────▲──────────────────────────────────────────┘
                 │ google.script.run → apiCall(metodo, args)
 ┌───────────────┴──────────────────────────────────────────┐

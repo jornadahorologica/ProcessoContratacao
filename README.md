@@ -37,7 +37,7 @@ src/
   81_Setup.js              instalação (setup) e gatilhos
   90_Api.js                API única do front-end (permissões + lock)
   91_WebApp.js             doGet
-  ui/Index.html, ui/Estilos.html, ui/App.html   interface (SPA em JS puro)
+  Index.html, Estilos.html, App.html   interface (SPA em JS puro)
 tests/                     testes locais com os serviços Google simulados
 ```
 
@@ -72,6 +72,8 @@ Pré-requisitos: Node.js e [clasp](https://github.com/google/clasp) (`npm i -g @
    - Quem pode acessar: **Qualquer pessoa do domínio**
 7. *(Opcional)* Notificações por e-mail: crie as propriedades `NOTIFICAR_EMAIL = true` e `APP_URL = <url do Web App>` e execute `instalarGatilhos` para receber o resumo diário de prazos.
 8. Cadastre os usuários em **Administração** no próprio sistema, ou direto na aba `cfg_Usuarios`.
+
+**Instalação manual (sem clasp):** crie no editor um arquivo de script para cada `.js` de `src/` e um arquivo HTML para cada `.html`, usando **exatamente** os nomes `Index`, `Estilos` e `App`. Ative "Mostrar arquivo de manifesto appsscript.json" nas configurações do projeto e cole o conteúdo de `src/appsscript.json`. Depois siga a partir do passo 4.
 
 Papéis disponíveis: `ADMIN` (tudo), `GESTOR` (opera e suspende/cancela processos), `ANALISTA` (opera processos) e `CONSULTA` (somente leitura).
 
