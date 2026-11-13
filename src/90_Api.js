@@ -17,6 +17,10 @@ var API = {
         .map(function (x) { return { email: x.email, nome: x.nome, setor: x.setor }; }),
       metodosMapa: PesquisaPrecoService.METODOS,
       responsavelTecnicoPadrao: APP.RESPONSAVEL_TECNICO_PADRAO,
+      assinaturasPorTipo: (ConfigService.carregar().cfg_Assinaturas || []).reduce(function (m, a) {
+        (m[a.tipoDocumento] = m[a.tipoDocumento] || []).push({ ordem: a.ordem, signatario: a.signatario, cargo: a.cargo });
+        return m;
+      }, {}),
       dbUrl: u.papel === PAPEIS.ADMIN ? Db.planilha().getUrl() : '',
       pastaRaizUrl: u.papel === PAPEIS.ADMIN ? DriveService.raiz().getUrl() : '',
       sistemasExternos: Object.keys(APP.SISTEMAS_EXTERNOS).map(function (k) {
@@ -46,6 +50,8 @@ var API = {
   anexarDocumento: ['E', function (processoId, tipo, tarefaId, arquivo) { return DocumentoService.anexar(processoId, tipo, tarefaId, arquivo); }],
   vincularDocumento: ['E', function (processoId, tipo, tarefaId, link, mover) { return DocumentoService.vincular(processoId, tipo, tarefaId, link, mover); }],
   alterarStatusDocumento: ['E', function (id, status) { return DocumentoService.alterarStatus(id, status); }],
+  enviarParaAssinatura: ['E', function (documentoId) { return AssinaturaService.enviar(documentoId); }],
+  registrarAssinatura: ['E', function (assinaturaId, data) { return AssinaturaService.registrar(assinaturaId, data); }],
 
   salvarCotacao: ['E', function (processoId, c) { return PesquisaPrecoService.salvar(processoId, c); }],
   removerCotacao: ['E', function (id) { PesquisaPrecoService.remover(id); return true; }],

@@ -6,6 +6,7 @@
  * - cria a pasta raiz (ou usa ROOT_FOLDER_ID, se definido — recomendado:
  *   uma pasta em Drive Compartilhado);
  * - carrega a configuração do fluxo da CESOP nas abas cfg_* vazias;
+ * - aplica as migrações de configuração pendentes (82_Migracoes.js);
  * - cadastra quem executou como ADMIN.
  *
  * É seguro executar novamente: nada é apagado.
@@ -43,6 +44,7 @@ function setup() {
   }
 
   log = log.concat(Seed.carregar());
+  log = log.concat(Migracoes.executar());
 
   var email = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
   if (email && !repo('cfg_Usuarios').obter(email)) {

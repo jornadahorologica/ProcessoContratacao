@@ -43,7 +43,7 @@ function $$(sel, raiz) { return Array.prototype.slice.call((raiz || document).qu
 function tag(status, rotulo) { return '<span class="tag ' + esc(status) + '">' + esc(rotulo || ROTULOS[status] || status) + '</span>'; }
 var ROTULOS = {
   ABERTA: 'Em andamento', AGUARDANDO_RETORNO: 'Aguardando retorno', AGUARDANDO: 'Aguardando', CONCLUIDA: 'Concluída',
-  DEVOLVIDA: 'Devolvida', CANCELADA: 'Cancelada', NAO_INICIADA: 'Não iniciada', EM_ANDAMENTO: 'Em andamento',
+  DEVOLVIDA: 'Devolvida', CANCELADA: 'Cancelada', NAO_INICIADA: 'Não iniciada', EM_ANDAMENTO: 'Em andamento', EM_ASSINATURA: 'Em assinatura (SUITE)',
   SUSPENSO: 'Suspenso', CONCLUIDO: 'Concluído', CANCELADO: 'Cancelado', RASCUNHO: 'Rascunho', FINAL: 'Final',
   RESPONDIDA: 'Respondida'
 };
@@ -417,7 +417,39 @@ function renderTrabalho() {
 }
 
 // ---------- blocos da área de trabalho
+/** Sugestão de preenchimento (cfg_Campos.valorPadrao) com botão "Usar". */
+function sugestaoHtml(c, ed) {
+  var s = S.tar && S.tar.sugestoes && S.tar.sugestoes[c.chave];
+  if (!s || !ed) return '';
+  var atual = S.tar.valores[c.chave];
+  if (atual !== undefined && String(atual) === String(s.valor)) return '';
+  var exibir = c.tipo === 'moeda' ? brl(s.valor) : String(s.valor);
+  if (exibir.length > 220) exibir = exibir.slice(0, 220) + '…';
+  return '<div class="sugestao">💡 <b>Sugestão</b> <span class="ajuda">(' + esc(s.origem) + ')</span>: ' + esc(exibir) +
+    ' <button class="btn sec peq" data-acao="usarSugestao" data-campo="' + esc(c.chave) + '">Usar</button></div>';
+}
+
+function permiteNsa(c) { return c.tipo === 'secaoLei' && /(^|[,;\s])NSA($|[,;\s])/i.test(c.opcoes || ''); }
+
+/** Seção de documento (ex.: inciso do ETP): recolhível, com "Não se aplica" quando permitido. */
+function secaoHtml(c, w, ed) {
+  var v = w.valores[c.chave] || '';
+  var nsa = permiteNsa(c) && w.valores[c.chave + '_nsa'] === 'true';
+  var ok = String(v).trim() !== '';
+  var ico = ok ? (nsa ? '➖' : '✅') : '⚪';
+  var dis = ed ? '' : ' disabled';
+  return '<details class="secao' + (ok ? ' ok' : '') + '"' + (ok ? '' : ' open') + ' data-secao="' + esc(c.chave) + '">' +
+    '<summary><span class="ico">' + ico + '</span><span>' + esc(c.rotulo) + (permiteNsa(c) ? '' : ' <span class="obrig">*</span>') + '</span>' +
+    (nsa ? ' <span class="tag RASCUNHO">Não se aplica</span>' : '') + '</summary><div class="secao-corpo">' +
+    (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') +
+    (permiteNsa(c) ? '<label class="check" style="font-weight:normal"><input type="checkbox" name="' + esc(c.chave) + '_nsa" data-change="nsa"' +
+      (nsa ? ' checked' : '') + dis + '> Não se aplica <span class="ajuda">(art. 18, §2º — justifique abaixo)</span></label>' : '') +
+    '<textarea class="grande" name="' + esc(c.chave) + '" placeholder="' + (nsa ? 'Justificativa do “Não se aplica”' : 'Texto da seção') + '"' + dis + '>' +
+    esc(v) + '</textarea>' + sugestaoHtml(c, ed) + '</div></details>';
+}
+
 function campoHtml(c, valor, ed) {
+  if (c.tipo === 'secaoLei') return secaoHtml(c, S.tar, ed);
   var dis = ed ? '' : ' disabled';
   var v = valor === undefined || valor === null ? '' : valor;
   var rot = '<label>' + esc(c.rotulo) + (c.obrigatorio ? ' <span class="obrig">*</span>' : '') + '</label>';
@@ -437,14 +469,20 @@ function campoHtml(c, valor, ed) {
       break;
     default: inp = '<input name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>';
   }
-  return '<div>' + rot + inp + (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') + '</div>';
+  return '<div>' + rot + inp + (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') + sugestaoHtml(c, ed) + '</div>';
 }
 
 function bFormulario(w, ed) {
   if (!w.campos.length) return '';
-  return '<div class="bloco" id="bloco-form"><h3>Dados da etapa</h3>' +
+  var secoes = w.campos.filter(function (c) { return c.tipo === 'secaoLei'; });
+  var feitas = secoes.filter(function (c) { return String(w.valores[c.chave] || '').trim() !== ''; }).length;
+  var progresso = secoes.length ? '<span class="progresso"><span style="width:' + Math.round(100 * feitas / secoes.length) + '%"></span></span>' +
+    '<span class="ajuda">' + feitas + ' de ' + secoes.length + ' seções preenchidas</span>' : '';
+  return '<div class="bloco" id="bloco-form"><h3><span>Dados da etapa</span><span class="acoes">' + progresso +
+    (secoes.length ? '<button class="btn sec peq" data-acao="expandirSecoes">Expandir/recolher</button>' : '') + '</span></h3>' +
     w.campos.map(function (c) { return campoHtml(c, w.valores[c.chave], ed); }).join('') +
-    (ed ? '<div class="acoes" style="margin-top:12px"><button class="btn" data-acao="salvarCampos" data-raiz="#bloco-form">Salvar dados</button></div>' : '') + '</div>';
+    (ed ? '<div class="acoes barra-salvar"><button class="btn" data-acao="salvarCampos" data-raiz="#bloco-form">Salvar dados</button>' +
+      '<span class="ajuda">Salve com frequência — os textos ficam guardados como rascunho até a conclusão da etapa.</span></div>' : '') + '</div>';
 }
 
 function bDecisao(w, ed) {
@@ -466,13 +504,47 @@ function bChecklist(w, ed) {
   }).join('') + '</div>';
 }
 
-function tabelaDocs(docs, ed) {
+function exigeAssinatura(tipo) { return ((S.ctx.assinaturasPorTipo || {})[tipo] || []).length > 0; }
+
+/** Ações do documento conforme status e exigência de assinatura no SUITE. */
+function acoesDoc(d, ed) {
+  if (!ed) return '';
+  var b = function (acao, rotulo, extra, cls) {
+    return '<button class="btn ' + (cls || 'sec') + ' peq" data-acao="' + acao + '" data-doc="' + esc(d.id) + '"' + (extra || '') + '>' + rotulo + '</button> ';
+  };
+  if (exigeAssinatura(d.tipoCodigo) && d.origem === 'GERADO') {
+    if (d.status === 'RASCUNHO') return b('enviarAssinatura', '✍️ Enviar para assinatura (SUITE)', '', '');
+    if (d.status === 'EM_ASSINATURA') return b('statusDoc', 'Cancelar assinatura', ' data-status="RASCUNHO"');
+    return b('statusDoc', 'Voltar a rascunho', ' data-status="RASCUNHO"');
+  }
+  return b('statusDoc', d.status === 'FINAL' ? 'Voltar a rascunho' : 'Marcar como final', ' data-status="' + (d.status === 'FINAL' ? 'RASCUNHO' : 'FINAL') + '"');
+}
+
+/** Linha de assinaturas do documento (quem já assinou no SUITE). */
+function linhaAssinaturas(d, assinaturas, ed) {
+  var l = (assinaturas || []).filter(function (a) { return a.documentoId === d.id; });
+  if (!l.length || d.status === 'RASCUNHO') return '';
+  return '<tr class="sub"><td colspan="6"><div class="assinaturas">' +
+    (d.pdfUrl ? '<a class="btn sec peq" href="' + esc(d.pdfUrl) + '" target="_blank">📄 PDF para o SUITE</a> ' : '') +
+    l.map(function (a) {
+      var assinado = a.status === 'ASSINADO';
+      return '<span class="assinante ' + (assinado ? 'ok' : '') + '">' + (assinado ? '✅' : '⏳') + ' <b>' + esc(a.signatario) + '</b>' +
+        (a.cargo ? ' <span class="ajuda">' + esc(a.cargo) + '</span>' : '') +
+        (assinado ? ' <span class="ajuda">em ' + dataBR(a.assinadoEm) + '</span>' :
+          (ed && d.status === 'EM_ASSINATURA' ? ' <button class="btn peq" data-acao="registrarAssinatura" data-id="' + esc(a.id) + '">Assinou</button>' : '')) +
+        '</span>';
+    }).join('') + '</div></td></tr>';
+}
+
+function tabelaDocs(docs, ed, assinaturas) {
   if (!docs.length) return '<div class="vazio">Nenhum documento.</div>';
   return '<table><tr><th>Documento</th><th>Tipo</th><th>Versão</th><th>Status</th><th>Criado</th><th></th></tr>' + docs.map(function (d) {
-    return '<tr><td><a href="' + esc(d.url) + '" target="_blank">' + esc(d.nome) + '</a></td><td>' + esc(nomeTipoDoc(d.tipoCodigo)) + '</td>' +
+    var assina = exigeAssinatura(d.tipoCodigo);
+    return '<tr><td><a href="' + esc(d.url) + '" target="_blank">' + esc(d.nome) + '</a>' +
+      (assina ? '<br><span class="ajuda">✍️ Assinam: ' + esc(S.ctx.assinaturasPorTipo[d.tipoCodigo].map(function (a) { return a.signatario === '{{responsavelTecnico}}' ? 'Resp. técnico' : a.signatario; }).join(', ')) + '</span>' : '') +
+      '</td><td>' + esc(nomeTipoDoc(d.tipoCodigo)) + '</td>' +
       '<td>v' + esc(d.versao) + '</td><td>' + tag(d.status) + '</td><td>' + dataBR(d.criadoEm) + '<br><span class="ajuda">' + esc(nomeUsuario(d.criadoPor)) + '</span></td>' +
-      '<td>' + (ed ? '<button class="btn sec peq" data-acao="statusDoc" data-doc="' + esc(d.id) + '" data-status="' + (d.status === 'FINAL' ? 'RASCUNHO' : 'FINAL') + '">' +
-        (d.status === 'FINAL' ? 'Voltar a rascunho' : 'Marcar como final') + '</button>' : '') + '</td></tr>';
+      '<td>' + acoesDoc(d, ed) + '</td></tr>' + linhaAssinaturas(d, assinaturas, ed);
   }).join('') + '</table>';
 }
 
@@ -488,7 +560,7 @@ function bDocumentos(w, ed) {
   var tipo = w.etapa.documentoTipo;
   return '<div class="bloco"><h3><span>Documentos' + (tipo ? ' — ' + esc(nomeTipoDoc(tipo)) : '') + '</span>' +
     (ed && tipo && tipo !== 'MAPA_PRECOS' ? '<button class="btn peq" data-acao="gerarDoc" data-tipo="' + esc(tipo) + '">📝 Gerar a partir do modelo</button>' : '') + '</h3>' +
-    tabelaDocs(w.documentos, ed) + (ed ? formAnexo('wt', tipo) : '') + '</div>';
+    tabelaDocs(w.documentos, ed, w.assinaturas) + (ed ? formAnexo('wt', tipo) : '') + '</div>';
 }
 
 function bSolicitacao(w, ed) {
@@ -571,7 +643,7 @@ function bInstrucao(w) {
 // ---------- aba Documentos
 function abaDocumentos(alvo) {
   var ed = podeEditar() && S.det.processo.status === 'EM_ANDAMENTO';
-  alvo.innerHTML = '<div class="card"><h2>Documentos do processo</h2>' + tabelaDocs(S.det.documentos, ed) +
+  alvo.innerHTML = '<div class="card"><h2>Documentos do processo</h2>' + tabelaDocs(S.det.documentos, ed, S.det.assinaturas) +
     (ed ? '<h3 style="margin-top:16px">Anexar documento</h3>' + formAnexo('dp', 'OUTRO') : '') + '</div>';
 }
 
@@ -735,6 +807,34 @@ var ACOES = {
     ocupado(api('vincularDocumento', S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', link, mover), 'Documento vinculado.')
       .then(function () { noFluxo ? carregarTarefa(S.tarefaId) : recarregarProcesso(); });
   },
+  enviarAssinatura: function (d) {
+    if (!confirm('Gerar o PDF e abrir o controle de assinaturas no SUITE?\nDepois de juntar o PDF ao SUITE, registre aqui cada assinatura.')) return;
+    ocupado(api('enviarParaAssinatura', d.doc), 'PDF gerado. Junte-o ao SUITE para assinatura.').then(function () {
+      S.aba === 'fluxo' ? carregarTarefa(S.tarefaId) : recarregarProcesso();
+    });
+  },
+  registrarAssinatura: function (d) {
+    var data = prompt('Data da assinatura no SUITE (dd/mm/aaaa):', new Date().toLocaleDateString('pt-BR'));
+    if (data === null) return;
+    var m = String(data).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return toast('Data inválida. Use dd/mm/aaaa.', true);
+    ocupado(api('registrarAssinatura', d.id, m[3] + '-' + m[2] + '-' + m[1]), 'Assinatura registrada.').then(function () {
+      S.aba === 'fluxo' ? carregarTarefa(S.tarefaId) : recarregarProcesso();
+    });
+  },
+  usarSugestao: function (d) {
+    var s = S.tar.sugestoes[d.campo];
+    var el = $('#bloco-form [name="' + d.campo + '"]');
+    if (!s || !el) return;
+    el.value = s.valor;
+    el.focus();
+    toast('Sugestão aplicada. Revise e clique em "Salvar dados".');
+  },
+  expandirSecoes: function () {
+    var secoes = $$('#bloco-form details.secao');
+    var abrir = secoes.some(function (x) { return !x.open; });
+    secoes.forEach(function (x) { x.open = abrir; });
+  },
   statusDoc: function (d) {
     ocupado(api('alterarStatusDocumento', d.doc, d.status), 'Status do documento alterado.').then(function () {
       S.aba === 'fluxo' ? carregarTarefa(S.tarefaId) : recarregarProcesso();
@@ -794,6 +894,11 @@ var ACOES = {
 };
 
 var MUDANCAS = {
+  nsa: function (el) {
+    var area = el.closest('.secao-corpo').querySelector('textarea');
+    area.placeholder = el.checked ? 'Justificativa do “Não se aplica”' : 'Texto da seção';
+    if (el.checked) area.focus();
+  },
   atribuir: function (el) {
     ocupado(api('atribuirTarefa', S.tarefaId, el.value), 'Analista responsável alterado.');
   },

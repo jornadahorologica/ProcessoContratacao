@@ -9,7 +9,7 @@
 var PesquisaPrecoService = {
   FONTES: ['Contrato equivalente', 'Painel de Preços / Compras.gov', 'Cotação eletrônica', 'Marketplace',
     'Fornecedor (cotação direta)', 'Mídia especializada / sítio eletrônico', 'Nota fiscal', 'Outra'],
-  METODOS: { MEDIANA: 'Mediana', MEDIA: 'Média', MENOR: 'Menor preço' },
+  METODOS: { MEDIA: 'Média', MEDIANA: 'Mediana', MENOR: 'Menor preço' },
 
   listar: function (processoId) {
     return repo('PesquisaPrecos').onde({ processoId: processoId });
@@ -60,7 +60,7 @@ var PesquisaPrecoService = {
    * automaticamente: o analista decide desmarcando "considerado").
    */
   calcularMapa: function (processoId, metodo) {
-    metodo = this.METODOS[metodo] ? metodo : 'MEDIANA';
+    metodo = this.METODOS[metodo] ? metodo : 'MEDIA'; // padrão: média das propostas
     var limite = Number(PropertiesService.getScriptProperties().getProperty(APP.PROP.LIMITE_DESVIO_MAPA)) || 0.25;
     var grupos = Utils.agrupar(this.listar(processoId), function (c) { return c.item; });
     var itens = Object.keys(grupos).sort().map(function (nome) {

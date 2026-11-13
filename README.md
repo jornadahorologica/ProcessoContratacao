@@ -107,6 +107,18 @@ Blocos da área de trabalho (coluna `blocos`, separados por vírgula):
 
 **Modelos de documento:** crie um Google Docs com marcadores como `{{numero}}`, `{{titulo}}`, `{{objeto}}`, `{{numeroSuite}}`, `{{valorEstimado}}`, `{{dataAtual}}` ou qualquer campo das etapas (ex.: `{{descricaoNecessidade}}`, `{{vigenciaMeses}}`). Depois coloque o ID do arquivo em `cfg_DocumentosTipo.modeloId`.
 
+## Documentos, timbre e assinaturas (SUITE)
+
+- **Documentos sem modelo próprio** são montados a partir dos campos da etapa, como os 13 incisos do ETP. Eles recebem o **cabeçalho e o rodapé** do Google Docs indicado em `APP.MODELO_TIMBRADO_ID`, no `00_Config.gs` (por exemplo, um documento do SGS).
+- **ETP, TR, Mapa Comparativo e Formulário de Pré-Reserva** têm estrutura obrigatória. Para eles, cadastre o modelo próprio (Google Docs com marcadores `{{campo}}`) em `cfg_DocumentosTipo.modeloId`. Um marcador sozinho num parágrafo (ex.: `{{etpNecessidade}}`) vira vários parágrafos quando o texto tem quebras de linha.
+- **Quem assina cada tipo de documento** fica em `cfg_Assinaturas`. O signatário pode ser `{{responsavelTecnico}}`.
+- **Fluxo da assinatura:** Gerar documento → **Enviar para assinatura** (gera o PDF para juntar ao SUITE) → registrar cada assinatura → o documento vira **FINAL**. Um PDF já assinado e anexado ao sistema também conta como FINAL.
+- **Etapa com documento que exige assinatura:** só pode ser concluída com o documento FINAL.
+
+## Atualizando a configuração (migrações)
+
+Mudanças no fluxo depois da instalação, como o ETP com os 13 incisos, ficam em `src/82_Migracoes.js`. Para aplicá-las na planilha existente, execute o `setup` de novo: ele aplica as migrações pendentes **sem apagar dados**. A versão aplicada fica na propriedade `CFG_VERSAO`.
+
 ## Testes
 
 ```bash

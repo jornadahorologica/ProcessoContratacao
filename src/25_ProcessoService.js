@@ -177,6 +177,7 @@ var ProcessoService = {
       tarefas: tarefas,
       variaveis: Variaveis.mapa(id),
       documentos: DocumentoService.listar(id),
+      assinaturas: AssinaturaService.listar(id),
       diligencias: DiligenciaService.listar(id),
       historico: Historico.listar(id, 200),
       instrucao: Instrucao.verificar(p)
@@ -208,6 +209,8 @@ var ProcessoService = {
       pendencias: [],
       destinosDevolucao: []
     };
+    r.assinaturas = AssinaturaService.listar(p.id);
+    r.sugestoes = r.ativa ? Campos.sugestoes(p, r.campos, vars) : {};
     if (r.ativa) {
       r.pendencias = Workflow.pendencias(t, etapa, p);
       r.destinosDevolucao = Workflow.destinosDevolucao(t, p);
@@ -227,12 +230,16 @@ var ProcessoService = {
     var p = repo('Processos').obterOuFalhar(t.processoId);
     var etapa = ConfigService.etapa(p.fluxoId, t.etapaCodigo);
     var permitidas = {};
-    ConfigService.campos(p.fluxoId, etapa.codigo).forEach(function (c) { permitidas[c.chave] = c; });
+    ConfigService.campos(p.fluxoId, etapa.codigo).forEach(function (c) {
+      permitidas[c.chave] = c;
+      if (Campos.permiteNsa(c)) permitidas[c.chave + Campos.SUFIXO_NSA] = { chave: c.chave + Campos.SUFIXO_NSA, tipo: 'nsa' };
+    });
     if (etapa.variavelDecisao) permitidas[etapa.variavelDecisao] = { chave: etapa.variavelDecisao };
     var aceitos = {};
     Object.keys(valores || {}).forEach(function (k) {
       if (!permitidas[k]) return;
       var v = valores[k];
+      if (permitidas[k].tipo === 'nsa') v = v === true || v === 'true' ? 'true' : 'false';
       if (permitidas[k].tipo === 'moeda' || permitidas[k].tipo === 'numero') {
         var n = daCelula_(v, 'n');
         v = n === null ? '' : n;
@@ -241,6 +248,10 @@ var ProcessoService = {
     });
     Variaveis.definirVarias(p.id, aceitos, etapa.codigo);
     if (aceitos.numeroSuite !== undefined) repo('Processos').atualizar(p.id, { numeroSuite: aceitos.numeroSuite });
+    // Valor estimado da solução (ETP) passa a ser o valor estimado do processo
+    if (aceitos.valorEstimadoEtp !== undefined && aceitos.valorEstimadoEtp !== '') {
+      repo('Processos').atualizar(p.id, { valorEstimado: aceitos.valorEstimadoEtp, atualizadoEm: Utils.agora() });
+    }
     Historico.registrar(p.id, t.id, 'DADOS_SALVOS', etapa.nome + ': ' + Object.keys(aceitos).join(', '));
     return true;
   },

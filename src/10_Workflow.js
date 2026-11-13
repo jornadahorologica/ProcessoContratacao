@@ -132,9 +132,7 @@ var Workflow = {
     var vars = Variaveis.mapa(proc.id);
 
     if (blocos.indexOf('A') >= 0) {
-      ConfigService.campos(proc.fluxoId, etapa.codigo).forEach(function (c) {
-        if (c.obrigatorio && Utils.vazio(vars[c.chave])) p.push('Preencha o campo "' + c.rotulo + '"');
-      });
+      p = p.concat(Campos.pendencias(ConfigService.campos(proc.fluxoId, etapa.codigo), vars));
     }
     if (blocos.indexOf('F') >= 0 && etapa.variavelDecisao && Utils.vazio(vars[etapa.variavelDecisao])) {
       p.push('Registre a decisão: ' + etapa.nome);
@@ -148,9 +146,12 @@ var Workflow = {
       var docs = repo('Documentos').filtrar(function (d) {
         return d.processoId === proc.id && d.tipoCodigo === etapa.documentoTipo;
       });
+      var tipo = ConfigService.tipoDocumento(etapa.documentoTipo);
+      var nomeTipo = tipo ? tipo.nome : etapa.documentoTipo;
       if (!docs.length) {
-        var tipo = ConfigService.tipoDocumento(etapa.documentoTipo);
-        p.push('Gere ou anexe o documento: ' + (tipo ? tipo.nome : etapa.documentoTipo));
+        p.push('Gere ou anexe o documento: ' + nomeTipo);
+      } else if (AssinaturaService.exige(etapa.documentoTipo) && !docs.some(function (d) { return d.status === 'FINAL'; })) {
+        p.push('O documento "' + nomeTipo + '" precisa estar assinado no SUITE (registre as assinaturas ou anexe o PDF assinado)');
       }
     }
     if (blocos.indexOf('D') >= 0 && Utils.vazio(tarefa.retornoEm)) {

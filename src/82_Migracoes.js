@@ -1,0 +1,159 @@
+/**
+ * Migrações da configuração (abas cfg_*).
+ *
+ * A carga inicial (80_Seed.js) corresponde à versão 1. Cada evolução do fluxo
+ * entra aqui como uma migração numerada, aplicada pelo setup() sobre a
+ * planilha existente SEM apagar dados nem processos. A versão aplicada fica
+ * na propriedade do script CFG_VERSAO.
+ *
+ * As migrações só incluem/atualizam registros pelas suas chaves, então é
+ * seguro executar o setup() mais de uma vez.
+ */
+var Migracoes = {
+  PROP: 'CFG_VERSAO',
+
+  versaoAtual: function () {
+    return Number(PropertiesService.getScriptProperties().getProperty(this.PROP)) || 1;
+  },
+
+  executar: function () {
+    var self = this;
+    var log = [];
+    var atual = this.versaoAtual();
+    this.lista.filter(function (m) { return m.versao > atual; }).forEach(function (m) {
+      m.aplicar(self);
+      PropertiesService.getScriptProperties().setProperty(self.PROP, String(m.versao));
+      log.push('Migração ' + m.versao + ' aplicada: ' + m.descricao);
+    });
+    if (!log.length) log.push('Configuração já está na versão ' + atual + '.');
+    ConfigService.limparCache();
+    return log;
+  },
+
+  // ---------------------------------------------------------------- utilitários
+  /** Insere ou atualiza pelo valor da chave primária. */
+  upsert: function (tabela, obj) {
+    var r = repo(tabela);
+    var chave = obj[r.chave];
+    return r.obter(chave) ? r.atualizar(chave, obj) : r.inserir(obj);
+  },
+
+  remover: function (tabela, pred) {
+    var r = repo(tabela);
+    r.filtrar(pred).forEach(function (o) { r.remover(o[r.chave]); });
+  },
+
+  /** Atualiza o campo (fluxo + etapa + chave) se existir. */
+  ajustarCampo: function (fluxoId, etapa, chave, alteracoes) {
+    var c = repo('cfg_Campos').filtrar(function (x) {
+      return x.fluxoId === fluxoId && x.etapaCodigo === etapa && x.chave === chave;
+    })[0];
+    if (c) repo('cfg_Campos').atualizar(c.id, alteracoes);
+  },
+
+  // ---------------------------------------------------------------- migrações
+  lista: [
+    {
+      versao: 2,
+      descricao: 'ETP com os 13 incisos do art. 18 da Lei 14.133/2021, valor da solução e assinaturas no SUITE',
+      aplicar: function (M) {
+        var F = 'CONTRATACAO';
+        var NSA = 'NSA';
+
+        // --- Etapa ETP
+        if (repo('cfg_Etapas').obter(F + '.ETP')) {
+          repo('cfg_Etapas').atualizar(F + '.ETP', {
+            descricao: 'Estudo Técnico Preliminar — art. 18, §1º, da Lei 14.133/2021. Incisos I, IV, VI, VIII e XIII são ' +
+              'obrigatórios; os demais podem ser marcados como "Não se aplica", com justificativa (art. 18, §2º).'
+          });
+        }
+
+        // --- Campos antigos substituídos pelos incisos IV e V
+        M.remover('cfg_Campos', function (c) {
+          return c.fluxoId === F && c.etapaCodigo === 'ETP' &&
+            (c.chave === 'quantidadesEstimadas' || c.chave === 'pesquisaMercadologica');
+        });
+
+        // --- Incisos (ordem da lei). [nº, chave, rótulo, permite NSA, ajuda, valorPadrao]
+        var incisos = [
+          ['I', 'etpNecessidade', 'DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', false,
+            'Problema a ser resolvido sob a perspectiva do interesse público.', '{{descricaoNecessidade}}'],
+          ['II', 'etpPrevisaoPca', 'DEMONSTRATIVO DA PREVISÃO DA CONTRATAÇÃO NO PLANO DE CONTRATAÇÕES ANUAL', true,
+            'Demonstração da previsão no PCA, de modo a indicar o seu alinhamento com o planejamento da Administração.', ''],
+          ['III', 'etpRequisitos', 'DESCRIÇÃO DOS REQUISITOS DA CONTRATAÇÃO NECESSÁRIOS E SUFICIENTES À ESCOLHA DA SOLUÇÃO', true, '', ''],
+          ['IV', 'etpQuantidades', 'ESTIMATIVA DAS QUANTIDADES A SEREM CONTRATADAS', false,
+            'Acompanhada das memórias de cálculo e dos documentos que lhe dão suporte.', '{{quantidadeEstimadaDFD}}'],
+          ['V', 'etpLevantamentoMercado', 'LEVANTAMENTO DE MERCADO', true,
+            'Análise das alternativas possíveis e justificativa técnica e econômica da escolha do tipo de solução.', ''],
+          ['VI', 'etpEstimativaValor', 'ESTIMATIVA DO VALOR DA CONTRATAÇÃO', false,
+            'Memória de cálculo e documentos de suporte. ETICE: valor da proposta da ETICE. Licitação: média das propostas recebidas.', ''],
+          ['VII', 'etpSolucao', 'DESCRIÇÃO DA SOLUÇÃO COMO UM TODO', true,
+            'Inclusive das exigências relacionadas à manutenção e à assistência técnica, quando for o caso.', ''],
+          ['VIII', 'etpParcelamento', 'JUSTIFICATIVAS PARA O PARCELAMENTO OU NÃO DA SOLUÇÃO', false, '', ''],
+          ['IX', 'etpResultados', 'DEMONSTRATIVO DOS RESULTADOS PRETENDIDOS', true,
+            'Em termos de economicidade e de melhor aproveitamento dos recursos humanos, materiais e financeiros.', ''],
+          ['X', 'etpProvidencias', 'PROVIDÊNCIAS A SEREM ADOTADAS PREVIAMENTE À CELEBRAÇÃO DO CONTRATO', true,
+            'Inclusive capacitação de servidores ou empregados para fiscalização e gestão contratual.', ''],
+          ['XI', 'etpCorrelatas', 'CONTRATAÇÕES CORRELATAS E/OU INTERDEPENDENTES', true, '', ''],
+          ['XII', 'etpImpactosAmbientais', 'DESCRIÇÃO DE POSSÍVEIS IMPACTOS AMBIENTAIS E RESPECTIVAS MEDIDAS MITIGADORAS', true,
+            'Incluídos requisitos de baixo consumo de energia e de outros recursos, bem como logística reversa, quando aplicável.', ''],
+          ['XIII', 'etpPosicionamento', 'POSICIONAMENTO CONCLUSIVO SOBRE A ADEQUAÇÃO DA CONTRATAÇÃO PARA O ATENDIMENTO DA NECESSIDADE A QUE SE DESTINA', false, '', '']
+        ];
+        var ordem = 300;
+        var campo = function (id, chave, rotulo, tipo, obrig, opcoes, ajuda, valorPadrao) {
+          M.upsert('cfg_Campos', {
+            id: F + '.ETP.' + id, fluxoId: F, etapaCodigo: 'ETP', chave: chave, rotulo: rotulo, tipo: tipo,
+            obrigatorio: obrig, opcoes: opcoes || '', ajuda: ajuda || '', ordem: ordem++, valorPadrao: valorPadrao || ''
+          });
+        };
+        incisos.forEach(function (i) {
+          campo(i[0], i[1], i[0] + ' – ' + i[2], 'secaoLei', true, i[3] ? NSA : '', i[4], i[5]);
+          if (i[0] === 'II') {
+            // campos estruturados (filtros/relatórios) junto ao inciso II
+            M.ajustarCampo(F, 'ETP', 'registradoPCA', { ordem: ordem++ });
+            M.ajustarCampo(F, 'ETP', 'itemPCA', { ordem: ordem++ });
+          }
+          if (i[0] === 'V') {
+            M.ajustarCampo(F, 'ETP', 'contratadaEtice', {
+              ordem: ordem++, rotulo: 'Solução escolhida: contratação direta com a ETICE?',
+              ajuda: 'SIM = contratação direta com a ETICE (valor = proposta da ETICE; a instrução exige os documentos da ETICE). ' +
+                'NÃO = licitação (valor = média das propostas recebidas).'
+            });
+            campo('VALOR', 'valorEstimadoEtp', 'Valor estimado da contratação (R$)', 'moeda', true, '',
+              'Valor da solução escolhida. O sistema sugere o valor a partir das propostas registradas na pesquisa de preços.',
+              '=VALOR_SOLUCAO');
+          }
+        });
+
+        // --- Novo tipo de documento
+        M.upsert('cfg_DocumentosTipo', {
+          codigo: 'JUSTIFICATIVA_DIRETA', nome: 'Justificativa para contratação direta', pasta: 'Justificativa',
+          modeloId: '', exigidoInstrucao: true, condicao: 'contratadaEtice == SIM', ordem: 6
+        });
+
+        // --- Assinaturas no SUITE (ajuste nomes e cargos na aba cfg_Assinaturas)
+        var RT = ['{{responsavelTecnico}}', 'Responsável Técnico – CESOP'];
+        var TH = ['Thiago', 'COTIC'];
+        var SE = ['Secretário(a)', 'SECEX-PGI'];
+        var mapa = {
+          DFD: [SE],
+          ETP: [RT, TH, SE],
+          TR: [RT, TH, SE],
+          MAPA_PRECOS: [TH, SE],
+          PRE_RESERVA: [TH, SE],
+          JUSTIFICATIVA_DIRETA: [RT, TH, SE],
+          JUSTIFICATIVA: [RT],
+          MODALIDADE_PESQUISA: [RT],
+          CONSULTA_ETICE: [RT],
+          ANALISE_PROPOSTA: [RT],
+          PARECER: [RT]
+        };
+        Object.keys(mapa).forEach(function (tipo) {
+          mapa[tipo].forEach(function (s, i) {
+            M.upsert('cfg_Assinaturas', { id: tipo + '.' + (i + 1), tipoDocumento: tipo, ordem: i + 1, signatario: s[0], cargo: s[1] });
+          });
+        });
+      }
+    }
+  ]
+};

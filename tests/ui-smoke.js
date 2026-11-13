@@ -61,7 +61,7 @@ function montarHtml() {
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   page.on('console', (m) => process.env.DEBUG && console.log('[browser]', m.text()));
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'teste' : undefined));
+  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? (d.defaultValue() || 'teste') : undefined));
   await page.exposeFunction('__api', (m, a) => api(m, a));
   const html = montarHtml();
   await page.route('http://app.local/**', (r) => r.fulfill({ contentType: 'text/html', body: html }));
@@ -123,6 +123,75 @@ function montarHtml() {
   await page.goto('http://app.local/exec#/processo/' + NUM + '/documentos');
   await page.reload();
   await page.waitForSelector('[data-aba=documentos].ativo');
+  // ---------------- ETP (13 incisos) em um segundo processo, preparado via API
+  const ok = (m, ...a) => { const r = JSON.parse(api(m, a)); if (!r.ok) throw new Error(m + ': ' + r.erro); return r.data; };
+  const pdf = (n) => ({ nome: n, mimeType: 'application/pdf', base64: Buffer.from(n).toString('base64') });
+  const p2 = ok('criarProcesso', { titulo: 'Sustentação SGS 2027', objeto: 'Sustentação e evolução do SGS' });
+  const aberta = (cod) => ok('detalharProcesso', p2.id).tarefas.find((t) => t.etapaCodigo === cod && t.status === 'ABERTA');
+  let t2 = aberta('ABRIR_SUITE');
+  ok('salvarCampos', t2.id, { numeroSuite: '55555/2026', dataAberturaSuite: '2026-11-10' });
+  ok('concluirTarefa', t2.id, '');
+  t2 = aberta('DFD');
+  ok('salvarCampos', t2.id, { unidadeDemandante: 'CESOP', grauPrioridade: 'Alta', quantidadeEstimadaDFD: '12.000 UST/ano',
+    descricaoNecessidade: 'Garantir a continuidade da sustentação e evolução do SGS, sistema crítico para a gestão estadual.' });
+  ok('abrirTarefa', t2.id).checklist.filter((i) => i.obrigatorio).forEach((i) => ok('marcarChecklist', t2.id, i.id, true));
+  ok('anexarDocumento', p2.id, 'DFD', t2.id, pdf('DFD assinado.pdf'));
+  ok('concluirTarefa', t2.id, '');
+  t2 = aberta('CONSULTA_ETICE');
+  ok('salvarCampos', t2.id, { resultadoConsultaEtice: 'Favorável' });
+  ok('registrarEnvio', t2.id, 'Ofício 10/2026', '2026-11-01');
+  ok('registrarRetorno', t2.id, 'Resposta ETICE', '2026-11-05');
+  ok('anexarDocumento', p2.id, 'CONSULTA_ETICE', t2.id, pdf('Consulta ETICE.pdf'));
+  ok('concluirTarefa', t2.id, '');
+  ok('salvarCotacao', p2.id, { item: 'UST', quantidade: 12000, fornecedor: 'Empresa A', valorUnitario: 180 });
+  ok('salvarCotacao', p2.id, { item: 'UST', quantidade: 12000, fornecedor: 'Empresa B', valorUnitario: 220 });
+
+  await page.goto('http://app.local/exec#/processo/' + p2.numero + '/etapa/ETP');
+  await page.reload();
+  await page.waitForSelector('#bloco-form details.secao');
+  if ((await page.$$('#bloco-form details.secao')).length !== 13) throw new Error('ETP deveria ter 13 seções');
+  // Sugestão do DFD no inciso I
+  await page.click('details[data-secao=etpNecessidade] [data-acao=usarSugestao]');
+  if (!(await page.inputValue('[name=etpNecessidade]')).startsWith('Garantir a continuidade')) throw new Error('Sugestão não aplicada');
+  // Não se aplica no inciso XII
+  await page.check('[name=etpImpactosAmbientais_nsa]');
+  await page.fill('[name=etpImpactosAmbientais]', 'Serviço de TI sem impacto ambiental relevante.');
+  await page.selectOption('[name=contratadaEtice]', 'NAO');
+  await page.click('text=Salvar dados');
+  await esperarCarregar();
+  await page.waitForSelector('details[data-secao=etpImpactosAmbientais] .tag');
+  await page.click('div:has(> [name=valorEstimadoEtp]) [data-acao=usarSugestao]');
+  if (await page.inputValue('[name=valorEstimadoEtp]') !== '2400000') throw new Error('Sugestão de valor (média) incorreta');
+  const textos = { etpPrevisaoPca: 'Item 12 do PCA 2026.', etpRequisitos: 'Equipe com experiência em Java.', etpQuantidades: '12.000 UST/ano.',
+    etpLevantamentoMercado: 'Foram avaliadas fábrica de software e alocação.', etpEstimativaValor: 'Média das propostas recebidas.',
+    etpSolucao: 'Fábrica de software por UST.', etpParcelamento: 'Solução única, não parcelada.', etpResultados: 'Continuidade do SGS.',
+    etpProvidencias: 'Designação de fiscais.', etpCorrelatas: 'Hospedagem do SGS.', etpPosicionamento: 'A contratação é adequada.' };
+  await page.click('[data-acao=expandirSecoes]');
+  for (const [k, v] of Object.entries(textos)) await page.fill('[name=' + k + ']', v);
+  await page.selectOption('[name=registradoPCA]', 'SIM');
+  await page.click('text=Salvar dados');
+  await esperarCarregar();
+  await page.click('label:has-text("ETP revisado") input');
+  await esperarCarregar();
+  await page.waitForFunction(() => /13 de 13/.test(document.querySelector('#bloco-form h3').textContent));
+  await foto('4-etp-incisos');
+  // Gera o ETP e controla as assinaturas no SUITE
+  await page.click('[data-acao=gerarDoc]');
+  await esperarCarregar();
+  await page.click('[data-acao=enviarAssinatura]');
+  await esperarCarregar();
+  await page.waitForSelector('.assinaturas .assinante');
+  for (let i = 0; i < 3; i++) {
+    await page.click('[data-acao=registrarAssinatura] >> nth=0');
+    await esperarCarregar();
+  }
+  await page.waitForSelector('.ok-box');
+  await foto('5-etp-assinado');
+  await page.click('[data-acao=concluir]');
+  await esperarCarregar();
+  await page.waitForFunction(() => document.querySelectorAll('.timeline .item .ico').length > 0 &&
+    /Natureza contínua|Pesquisar Código|Pesquisa de Preço/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
+
   // Endereço inválido cai no painel
   await page.goto('http://app.local/exec#/rota/que/nao/existe');
   await page.reload();

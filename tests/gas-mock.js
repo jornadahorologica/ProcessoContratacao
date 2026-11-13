@@ -89,13 +89,18 @@ function criarAmbiente(opcoes) {
     getName() { return this.nome; }
     getUrl() { return 'https://drive.google.com/file/d/' + this.id; }
     getMimeType() { return this.mime; }
+    getAs(mime) { const b = { mime, nome: this.nome, setName(n) { this.nome = n; return this; } }; return b; }
     getBlob() { return { getContentType: () => 'image/png', getBytes: () => [137, 80, 78, 71] }; }
     moveTo(pasta) { this.pai = pasta.id; return this; }
     makeCopy(nome, pasta) {
       const id = novoId('f');
       const a = new Arquivo(id, nome, this.mime, pasta.id);
       estado.arquivos[id] = a;
-      if (estado.docs[this.id]) estado.docs[id] = new Documento(id, nome, estado.docs[this.id].texto);
+      const orig = estado.docs[this.id];
+      if (orig) {
+        estado.docs[id] = new Documento(id, nome, orig.paragrafos.map((p) => Object.assign({}, p)),
+          orig.cabecalho ? orig.cabecalho.lista.map((p) => Object.assign({}, p)) : null);
+      }
       return a;
     }
   }
@@ -117,28 +122,78 @@ function criarAmbiente(opcoes) {
   };
 
   // ---------------------------------------------------------------- Docs
+  // Documento = lista de parágrafos {texto, heading, alinhamento, negrito}; tabelas viram parágrafos "a | b".
+  class Paragrafo {
+    constructor(corpo, dados) { this.corpo = corpo; this.d = dados; }
+    getText() { return this.d.texto; }
+    setText(t) { this.d.texto = String(t); return this; }
+    setHeading(h) { this.d.heading = h; return this; }
+    setAlignment(a) { this.d.alinhamento = a; return this; }
+    asParagraph() { return this; }
+    asText() { return this.editAsText(); }
+    editAsText() {
+      const d = this.d;
+      return {
+        setBold(b) { d.negrito = b; return this; },
+        deleteText(i, f) { d.texto = d.texto.slice(0, i) + d.texto.slice(f + 1); return this; },
+        insertText(i, t) { d.texto = d.texto.slice(0, i) + t + d.texto.slice(i); return this; }
+      };
+    }
+    copy() { return new Paragrafo(null, Object.assign({}, this.d)); }
+    getParent() { return this.corpo; }
+  }
   class Corpo {
-    constructor(doc) { this.doc = doc; }
-    appendParagraph(t) { this.doc.texto += t + '\n'; return { setHeading() { return this; } }; }
-    appendTable(linhas) { this.doc.texto += linhas.map((l) => l.join(' | ')).join('\n') + '\n'; return {}; }
-    replaceText(padrao, valor) { this.doc.texto = this.doc.texto.replace(new RegExp(padrao, 'g'), valor); }
+    constructor(lista) { this.lista = lista; }
+    _p(d) { return new Paragrafo(this, d); }
+    clear() { this.lista.splice(0, this.lista.length, { texto: '' }); return this; }
+    getNumChildren() { return this.lista.length; }
+    getChild(i) { return this._p(this.lista[i]); }
+    getParagraphs() { return this.lista.map((d) => this._p(d)); }
+    getChildIndex(par) { return this.lista.indexOf(par.d); }
+    insertParagraph(i, par) { this.lista.splice(i, 0, par.d); return this._p(par.d); }
+    appendParagraph(t) { const d = { texto: String(t) }; this.lista.push(d); return this._p(d); }
+    appendTable(linhas) { linhas.forEach((l) => this.lista.push({ texto: l.join(' | '), tabela: true })); return {}; }
+    findText(padrao) {
+      const re = new RegExp(padrao);
+      for (const d of this.lista) {
+        const m = re.exec(d.texto);
+        if (m) {
+          const p = this._p(d);
+          return { getElement: () => p, getStartOffset: () => m.index, getEndOffsetInclusive: () => m.index + m[0].length - 1 };
+        }
+      }
+      return null;
+    }
   }
   class Documento {
-    constructor(id, nome, texto) { this.id = id; this.nome = nome; this.texto = texto || ''; }
+    constructor(id, nome, paragrafos, cabecalho) {
+      this.id = id; this.nome = nome;
+      this.paragrafos = paragrafos || [{ texto: '' }];
+      this.cabecalho = cabecalho ? new Corpo(cabecalho) : null;
+    }
+    get texto() { return this.paragrafos.map((p) => p.texto).join('\n'); }
     getId() { return this.id; }
-    getBody() { return new Corpo(this); }
-    getHeader() { return null; }
+    getBody() { return new Corpo(this.paragrafos); }
+    getHeader() { return this.cabecalho; }
     getFooter() { return null; }
     saveAndClose() {}
   }
   const DocumentApp = {
     ParagraphHeading: { TITLE: 'TITLE', HEADING1: 'H1', HEADING2: 'H2' },
+    HorizontalAlignment: { LEFT: 'L', CENTER: 'C', RIGHT: 'R', JUSTIFY: 'J' },
     create(nome) {
       const id = novoId('f');
       estado.arquivos[id] = new Arquivo(id, nome, 'application/vnd.google-apps.document', null);
       return (estado.docs[id] = new Documento(id, nome));
     },
     openById(id) { return estado.docs[id]; }
+  };
+  /** Cria um Google Docs simulado (ex.: modelo timbrado ou modelo com marcadores). */
+  estado.criarDoc = (nome, linhas, cabecalho) => {
+    const d = DocumentApp.create(nome);
+    d.paragrafos = linhas.map((t) => ({ texto: t }));
+    if (cabecalho) d.cabecalho = new Corpo(cabecalho.map((t) => ({ texto: t })));
+    return d;
   };
 
   // ---------------------------------------------------------------- outros

@@ -14,6 +14,12 @@ var APP = {
   NOME_PASTA_RAIZ: '_Processos de CONTRATAÇÃO (Sistema)',
   PREFIXO_NUMERO: 'CESOP',
   RESPONSAVEL_TECNICO_PADRAO: 'Daniel Boyadijan',
+  /**
+   * ID de um Google Docs cujo CABEÇALHO e RODAPÉ (timbre) serão usados nos
+   * documentos gerados sem modelo próprio (ex.: um documento do Drive do SGS).
+   * Deixe vazio para gerar sem timbre.
+   */
+  MODELO_TIMBRADO_ID: '',
   CACHE_TTL_SEG: 600,
   // Propriedades do script (Projeto > Configurações > Propriedades do script)
   PROP: {
@@ -93,7 +99,11 @@ var SCHEMA = {
   cfg_Etapas: ['id', 'fluxoId', 'codigo', 'ordem:n', 'nome', 'fase', 'tipo', 'setor', 'prazoDias:n',
     'blocos', 'documentoTipo', 'variavelDecisao', 'opcoesDecisao', 'descricao'],
   cfg_Transicoes: ['id', 'fluxoId', 'origem', 'destino', 'condicao', 'ordem:n', 'rotulo'],
-  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n'],
+  // tipo "secaoLei": seção de texto de documento (ex.: inciso do ETP); opcoes = "NSA" permite "Não se aplica".
+  // valorPadrao: sugestão exibida ao usuário, ex.: "{{descricaoNecessidade}}" ou "=VALOR_SOLUCAO".
+  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao'],
+  // Quem assina cada tipo de documento (no SUITE). signatario aceita {{responsavelTecnico}}.
+  cfg_Assinaturas: ['id', 'tipoDocumento', 'ordem:n', 'signatario', 'cargo'],
   cfg_ChecklistItens: ['id', 'fluxoId', 'etapaCodigo', 'descricao', 'obrigatorio:b', 'ordem:n'],
   cfg_DocumentosTipo: ['codigo', 'nome', 'pasta', 'modeloId', 'exigidoInstrucao:b', 'condicao', 'ordem:n'],
   cfg_Pastas: ['id', 'fluxoId', 'nome', 'ordem:n'],
@@ -109,7 +119,9 @@ var SCHEMA = {
     'enviadoEm', 'referenciaEnvio', 'retornoEm', 'referenciaRetorno', 'observacao'],
   Variaveis: ['id', 'processoId', 'chave', 'valor', 'etapaCodigo', 'atualizadoEm', 'atualizadoPor'],
   Documentos: ['id', 'processoId', 'tarefaId', 'etapaCodigo', 'tipoCodigo', 'nome', 'fileId', 'url',
-    'mimeType', 'origem', 'status', 'versao:n', 'criadoEm', 'criadoPor'],
+    'mimeType', 'origem', 'status', 'versao:n', 'criadoEm', 'criadoPor', 'pdfFileId', 'pdfUrl'],
+  Assinaturas: ['id', 'processoId', 'documentoId', 'tipoDocumento', 'ordem:n', 'signatario', 'cargo',
+    'status', 'assinadoEm', 'registradoPor', 'registradoEm'],
   PesquisaPrecos: ['id', 'processoId', 'item', 'descricao', 'unidade', 'quantidade:n', 'fonte',
     'fornecedor', 'cnpj', 'valorUnitario:n', 'dataCotacao', 'referencia', 'considerado:b',
     'observacao', 'criadoEm', 'criadoPor'],
@@ -120,4 +132,4 @@ var SCHEMA = {
 
 /** Abas de configuração (lidas em bloco e guardadas em cache). */
 var TABELAS_CONFIG = ['cfg_Fluxos', 'cfg_Etapas', 'cfg_Transicoes', 'cfg_Campos',
-  'cfg_ChecklistItens', 'cfg_DocumentosTipo', 'cfg_Pastas', 'cfg_Fases', 'cfg_Usuarios'];
+  'cfg_ChecklistItens', 'cfg_DocumentosTipo', 'cfg_Pastas', 'cfg_Fases', 'cfg_Usuarios', 'cfg_Assinaturas'];

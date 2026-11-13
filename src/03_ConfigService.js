@@ -7,7 +7,7 @@
  */
 var ConfigService = {
   _memo: null,
-  CHAVE_CACHE: 'cfg_v1',
+  CHAVE_CACHE: 'cfg_v2',
 
   carregar: function () {
     if (this._memo) return this._memo;
@@ -100,5 +100,17 @@ var ConfigService = {
 
   usuarios: function () {
     return this.carregar().cfg_Usuarios;
+  },
+
+  /** Signatários configurados para um tipo de documento (ordem de assinatura). */
+  assinaturas: function (tipoDocumento) {
+    return this.ordenar_((this.carregar().cfg_Assinaturas || []).filter(function (a) {
+      return a.tipoDocumento === tipoDocumento;
+    }));
+  },
+
+  /** Etapas cujo documento é do tipo informado (usado para montar o documento a partir dos campos). */
+  etapasDoDocumento: function (fluxoId, tipoDocumento) {
+    return this.etapas(fluxoId).filter(function (e) { return e.documentoTipo === tipoDocumento; });
   }
 };

@@ -64,11 +64,33 @@ function concluirSimples(env, procId, etapa, campos, opcoes) {
     env.ok('registrarRetorno', t.id, 'Resposta 1', '2026-11-12');
   }
   if (w.etapa.documentoTipo && w.blocos.includes('B')) {
-    if (opcoes.gerar) env.ok('gerarDocumento', procId, w.etapa.documentoTipo, t.id);
+    if (opcoes.gerar) assinarTudo(env, env.ok('gerarDocumento', procId, w.etapa.documentoTipo, t.id));
     else env.ok('anexarDocumento', procId, w.etapa.documentoTipo, t.id, arquivo(etapa + '.pdf'));
   }
   env.ok('concluirTarefa', t.id, '');
   return t;
+}
+
+/** Se o tipo exige assinatura: envia para assinatura e registra todas (simula o SUITE). */
+function assinarTudo(env, doc) {
+  const exigidas = env.ok('contexto').assinaturasPorTipo[doc.tipoCodigo] || [];
+  if (!exigidas.length) return doc;
+  env.ok('enviarParaAssinatura', doc.id);
+  env.ok('detalharProcesso', doc.processoId).assinaturas.filter((a) => a.documentoId === doc.id)
+    .forEach((a) => env.ok('registrarAssinatura', a.id, '2026-11-13'));
+  return doc;
+}
+
+/** Os 13 incisos do ETP preenchidos (XII marcado como "Não se aplica"). */
+function camposEtp(extra) {
+  return Object.assign({
+    etpNecessidade: 'Necessidade', etpPrevisaoPca: 'Item 12 do PCA 2026', registradoPCA: 'SIM', itemPCA: '12',
+    etpRequisitos: 'Requisitos', etpQuantidades: '1.000 UST', etpLevantamentoMercado: 'Mercado',
+    contratadaEtice: 'NAO', valorEstimadoEtp: '1500', etpEstimativaValor: 'Média das propostas',
+    etpSolucao: 'Solução', etpParcelamento: 'Não parcelada', etpResultados: 'Resultados', etpProvidencias: 'Nenhuma',
+    etpCorrelatas: 'Nenhuma', etpImpactosAmbientais: 'Serviço de TI sem impacto ambiental relevante',
+    etpImpactosAmbientais_nsa: true, etpPosicionamento: 'Contratação adequada'
+  }, extra || {});
 }
 
 /** Leva um processo novo até a abertura das tarefas paralelas. */
@@ -77,7 +99,7 @@ function ateParalelo(env, titulo) {
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '123/2026', dataAberturaSuite: '2026-11-10' });
   concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta' }, { gerar: true });
   concluirSimples(env, p.id, 'CONSULTA_ETICE', { resultadoConsultaEtice: 'Favorável' });
-  concluirSimples(env, p.id, 'ETP', { quantidadesEstimadas: '10', pesquisaMercadologica: 'ok', registradoPCA: 'SIM', contratadaEtice: 'NAO' });
+  concluirSimples(env, p.id, 'ETP', camposEtp(), { gerar: true });
   return p;
 }
 
@@ -196,7 +218,9 @@ teste('Solicitação externa (consulta ETICE): envio → aguardando retorno → 
   concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta' });
   const t = tarefaAberta(env, p.id, 'CONSULTA_ETICE');
   env.ok('salvarCampos', t.id, { resultadoConsultaEtice: 'Favorável' });
-  env.ok('gerarDocumento', p.id, 'CONSULTA_ETICE', t.id);
+  const docEtice = env.ok('gerarDocumento', p.id, 'CONSULTA_ETICE', t.id);
+  assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /assinado no SUITE/);
+  assinarTudo(env, docEtice);
   assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /envio e o retorno/);
   env.ok('registrarEnvio', t.id, 'Ofício 10/2026', '2026-11-01');
   assert.strictEqual(env.ok('painel').indicadores.aguardandoRetorno, 1);
@@ -241,7 +265,7 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   assert.deepStrictEqual(mapa.itens[0].cotacoes.filter((c) => c.destoante).map((c) => c.fornecedor), ['Fornecedor C']);
   assert.strictEqual(env.ok('calcularMapa', p.id, 'MENOR').total, 100000);
   const mt = tarefaAberta(env, p.id, 'MAPA_PRECOS');
-  env.ok('gerarMapa', p.id, 'MEDIANA', mt.id);
+  assinarTudo(env, env.ok('gerarMapa', p.id, 'MEDIANA', mt.id));
   assert.strictEqual(env.ok('detalharProcesso', p.id).processo.valorEstimado, 110000);
   env.ok('concluirTarefa', mt.id, '');
 
@@ -272,16 +296,18 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   concluirSimples(env, p.id, 'BID_TRAMITE');
   concluirSimples(env, p.id, 'PRE_RESERVA', { numeroPreReserva: 'PR-1' });
 
-  // Instrução: documentos gerados ainda em RASCUNHO e não objeção BID exigida
+  // Instrução: documentos assinados (FINAL); não objeção BID exigida; ETICE e Justificativa não
   const ins = tarefaAberta(env, p.id, 'INSTRUCAO');
   let w = env.ok('abrirTarefa', ins.id);
   const faltando = w.instrucao.filter((i) => i.exigido && !i.ok).map((i) => i.codigo).sort();
-  assert.deepStrictEqual(faltando, ['DFD', 'TR']); // gerados (RASCUNHO); o Mapa refeito foi anexado (FINAL)
+  assert.deepStrictEqual(faltando, []);
   assert.ok(!w.instrucao.find((i) => i.codigo === 'JUSTIFICATIVA').exigido, 'Justificativa não exigida (NÃO contínua)');
   assert.ok(!w.instrucao.find((i) => i.codigo === 'ETICE_CND').exigido, 'docs ETICE não exigidos');
+  assert.ok(!w.instrucao.find((i) => i.codigo === 'JUSTIFICATIVA_DIRETA').exigido, 'contratação direta não exigida');
   assert.ok(w.instrucao.find((i) => i.codigo === 'BID_NAO_OBJECAO').exigido);
-  env.ok('detalharProcesso', p.id).documentos.filter((d) => d.status === 'RASCUNHO')
-    .forEach((d) => env.ok('alterarStatusDocumento', d.id, 'FINAL'));
+  // Mapa gerado (RASCUNHO) não pode virar FINAL sem as assinaturas
+  const mapaRascunho = env.ok('gerarMapa', p.id, 'MEDIA', '');
+  assert.match(env.falha('alterarStatusDocumento', mapaRascunho.id, 'FINAL'), /assinado no SUITE/);
   env.ok('marcarChecklist', ins.id, w.checklist[0].id, true);
   w = env.ok('abrirTarefa', ins.id);
   assert.deepStrictEqual(w.pendencias, []);
@@ -359,6 +385,129 @@ teste('Repositório: tipos (número pt-BR, booleano, JSON) e remoção', () => {
   env.ok('removerCotacao', c.id);
   env.novaExecucao();
   assert.strictEqual(env.ctx.repo('PesquisaPrecos').todos().length, 0);
+});
+
+teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, documento e assinaturas', () => {
+  const env = carregar();
+  env.ctx.setup();
+  const p = env.ok('criarProcesso', { titulo: 'ETP', objeto: 'Sustentação do SGS' });
+  concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '777/2026', dataAberturaSuite: '2026-11-10' });
+  concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'Necessidade vinda do DFD',
+    quantidadeEstimadaDFD: '1.000 UST', grauPrioridade: 'Alta' }, { gerar: true });
+  concluirSimples(env, p.id, 'CONSULTA_ETICE', { resultadoConsultaEtice: 'Favorável' });
+  const t = tarefaAberta(env, p.id, 'ETP');
+  let w = env.ok('abrirTarefa', t.id);
+
+  const secoes = w.campos.filter((c) => c.tipo === 'secaoLei');
+  assert.strictEqual(secoes.length, 13);
+  assert.deepStrictEqual(secoes.map((c) => c.rotulo.split(' – ')[0]),
+    ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII']);
+  const obrigSemNsa = secoes.filter((c) => !/NSA/.test(c.opcoes)).map((c) => c.rotulo.split(' – ')[0]);
+  assert.deepStrictEqual(obrigSemNsa, ['I', 'IV', 'VI', 'VIII', 'XIII'], 'art. 18, §2º');
+  assert.ok(!w.campos.some((c) => c.chave === 'quantidadesEstimadas'), 'campo antigo removido pela migração');
+
+  // Sugestões vindas do DFD
+  assert.strictEqual(w.sugestoes.etpNecessidade.valor, 'Necessidade vinda do DFD');
+  assert.strictEqual(w.sugestoes.etpQuantidades.valor, '1.000 UST');
+  assert.ok(!w.sugestoes.valorEstimadoEtp, 'sem propostas ainda, sem sugestão de valor');
+
+  // Valor da solução: licitação = média das propostas; ETICE = proposta da ETICE
+  env.ok('salvarCotacao', p.id, { item: 'UST', quantidade: 10, fornecedor: 'Empresa A', valorUnitario: 100 });
+  env.ok('salvarCotacao', p.id, { item: 'UST', quantidade: 10, fornecedor: 'Empresa B', valorUnitario: 200 });
+  env.ok('salvarCampos', t.id, { contratadaEtice: 'NAO' });
+  w = env.ok('abrirTarefa', t.id);
+  assert.strictEqual(w.sugestoes.valorEstimadoEtp.valor, 1500);
+  assert.match(w.sugestoes.valorEstimadoEtp.origem, /Média das 2/);
+  env.ok('salvarCotacao', p.id, { item: 'UST', quantidade: 10, fornecedor: 'ETICE', valorUnitario: 120 });
+  env.ok('salvarCampos', t.id, { contratadaEtice: 'SIM' });
+  assert.strictEqual(env.ok('abrirTarefa', t.id).sugestoes.valorEstimadoEtp.valor, 1200);
+
+  // "Não se aplica": só nos incisos que permitem, e exige justificativa
+  env.ok('salvarCampos', t.id, { etpImpactosAmbientais_nsa: true, etpNecessidade_nsa: true });
+  let det = env.ok('detalharProcesso', p.id);
+  assert.strictEqual(det.variaveis.etpImpactosAmbientais_nsa, 'true');
+  assert.strictEqual(det.variaveis.etpNecessidade_nsa, undefined, 'inciso I é obrigatório: não aceita NSA');
+  const pend = env.ok('abrirTarefa', t.id).pendencias.join(' | ');
+  assert.match(pend, /Justifique o "Não se aplica" em: XII/);
+  assert.match(pend, /Preencha a seção "I – DESCRIÇÃO DA NECESSIDADE/);
+
+  // Preenche tudo e gera o documento
+  env.ok('salvarCampos', t.id, camposEtp({ contratadaEtice: 'NAO', valorEstimadoEtp: '1.500,00' }));
+  assert.strictEqual(env.ok('detalharProcesso', p.id).processo.valorEstimado, 1500, 'valor do ETP no processo');
+  env.ok('marcarChecklist', t.id, env.ok('abrirTarefa', t.id).checklist[0].id, true);
+  const doc = env.ok('gerarDocumento', p.id, 'ETP', t.id);
+  const texto = env.estado.docs[doc.fileId].texto;
+  ['ESTUDO TÉCNICO PRELIMINAR', 'I – DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', 'XIII – POSICIONAMENTO CONCLUSIVO',
+    'Não se aplica. Justificativa: Serviço de TI sem impacto ambiental relevante', 'R$', 'Daniel Boyadijan', 'Thiago', 'SECEX-PGI',
+    'SUITE nº 777/2026'].forEach((trecho) => assert.ok(texto.includes(trecho), 'documento deveria conter: ' + trecho));
+  assert.ok(texto.indexOf('I – DESCRIÇÃO') < texto.indexOf('II – DEMONSTRATIVO'), 'ordem dos incisos');
+
+  // Assinaturas no SUITE
+  assert.match(env.falha('concluirTarefa', t.id, ''), /assinado no SUITE/);
+  assert.match(env.falha('alterarStatusDocumento', doc.id, 'FINAL'), /assinado no SUITE/);
+  env.ok('enviarParaAssinatura', doc.id);
+  det = env.ok('detalharProcesso', p.id);
+  const d2 = det.documentos.find((d) => d.id === doc.id);
+  assert.strictEqual(d2.status, 'EM_ASSINATURA');
+  assert.ok(d2.pdfUrl, 'PDF gerado para o SUITE');
+  const ass = det.assinaturas.filter((a) => a.documentoId === doc.id);
+  assert.deepStrictEqual(ass.map((a) => a.signatario), ['Daniel Boyadijan', 'Thiago', 'Secretário(a)']);
+  env.ok('registrarAssinatura', ass[0].id, '2026-11-13');
+  env.ok('registrarAssinatura', ass[1].id, '2026-11-13');
+  assert.strictEqual(env.ok('detalharProcesso', p.id).documentos.find((d) => d.id === doc.id).status, 'EM_ASSINATURA');
+  env.ok('registrarAssinatura', ass[2].id, '2026-11-13');
+  assert.strictEqual(env.ok('detalharProcesso', p.id).documentos.find((d) => d.id === doc.id).status, 'FINAL');
+  env.ok('concluirTarefa', t.id, '');
+  assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'NATUREZA', 'PESQUISA_PRECO']);
+});
+
+teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado anexado', () => {
+  const env = carregar();
+  env.ctx.setup();
+  const p = env.ok('criarProcesso', { titulo: 'Doc', objeto: 'Objeto' });
+  env.novaExecucao();
+  env.ctx.Variaveis.definir(p.id, 'descricaoNecessidade', 'Linha 1\nLinha 2', 'DFD');
+  env.ctx.Variaveis.definir(p.id, 'valorEstimadoEtp', '1234.5', 'ETP');
+
+  // Timbre: cabeçalho do documento de referência é mantido e o corpo é substituído
+  const timbre = env.estado.criarDoc('Doc SGS', ['conteúdo antigo'], ['GOVERNO DO ESTADO DO CEARÁ']);
+  env.ctx.APP.MODELO_TIMBRADO_ID = timbre.getId();
+  const d1 = env.ok('gerarDocumento', p.id, 'DFD', '');
+  const g1 = env.estado.docs[d1.fileId];
+  assert.strictEqual(g1.cabecalho.lista[0].texto, 'GOVERNO DO ESTADO DO CEARÁ');
+  assert.ok(!g1.texto.includes('conteúdo antigo'));
+  assert.ok(g1.texto.startsWith('DFD - DOCUMENTO DE FORMALIZAÇÃO DA DEMANDA'));
+
+  // Modelo com marcadores: várias linhas viram parágrafos; "R$" preservado
+  const modelo = env.estado.criarDoc('Modelo', ['Necessidade:', '{{descricaoNecessidade}}', 'Valor: {{valorEstimadoEtp}} — {{numero}}']);
+  env.novaExecucao();
+  env.ctx.repo('cfg_DocumentosTipo').atualizar('JUSTIFICATIVA_DIRETA', { modeloId: modelo.getId() });
+  env.ctx.ConfigService.limparCache();
+  const d2 = env.ok('gerarDocumento', p.id, 'JUSTIFICATIVA_DIRETA', '');
+  const linhas = env.estado.docs[d2.fileId].paragrafos.map((x) => x.texto);
+  assert.deepStrictEqual(linhas.slice(0, 3), ['Necessidade:', 'Linha 1', 'Linha 2']);
+  assert.match(linhas[3], /^Valor: R\$\s?1\.234,50 — CESOP-\d{4}-001$/);
+
+  // PDF assinado anexado = FINAL (dispensa o controle de assinaturas)
+  const d3 = env.ok('anexarDocumento', p.id, 'ETP', '', arquivo('ETP assinado.pdf'));
+  assert.strictEqual(d3.status, 'FINAL');
+});
+
+teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
+  const env = carregar();
+  env.ctx.setup();
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '2');
+  const ss = Object.values(env.estado.planilhas)[0];
+  const linhas = (n) => ss.getSheetByName(n).getLastRow();
+  const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
+  // Simula uma instalação antiga (versão 1) que roda o setup de novo
+  delete env.estado.props.CFG_VERSAO;
+  env.novaExecucao();
+  env.ctx.setup();
+  assert.deepStrictEqual(['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas), antes);
+  env.novaExecucao();
+  env.ctx.setup();
+  assert.deepStrictEqual(['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas), antes);
 });
 
 // ------------------------------------------------------------------ execução
