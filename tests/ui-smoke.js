@@ -63,6 +63,7 @@ function montarHtml() {
   await page.fill('[name=titulo]', 'Novo contrato SGS');
   await page.fill('[name=objeto]', 'Sustentação e evolução do SGS');
   await page.waitForSelector('a.logo-externo[href="https://suite.ce.gov.br/"] img');
+  if (await page.inputValue('[name=responsavelTecnico]') !== 'Daniel Boyadijan') throw new Error('Responsável técnico padrão ausente');
   await foto('0-novo-processo');
   await page.click('text=Criar processo');
   await page.waitForSelector('.timeline');

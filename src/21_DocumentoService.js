@@ -33,7 +33,7 @@ var DocumentoService = {
 
   dadosSubstituicao: function (proc) {
     var dados = {};
-    ['numero', 'titulo', 'objeto', 'numeroSuite', 'setorDemandante', 'responsavelEmail'].forEach(function (k) {
+    ['numero', 'titulo', 'objeto', 'numeroSuite', 'setorDemandante', 'responsavelEmail', 'responsavelTecnico'].forEach(function (k) {
       dados[k] = proc[k] || '';
     });
     dados.valorEstimado = proc.valorEstimado !== null && proc.valorEstimado !== undefined

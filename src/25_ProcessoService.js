@@ -27,6 +27,7 @@ var ProcessoService = {
         fase: '',
         setorDemandante: d.setorDemandante || '',
         responsavelEmail: String(d.responsavelEmail || u.email).toLowerCase(),
+        responsavelTecnico: Utils.vazio(d.responsavelTecnico) ? APP.RESPONSAVEL_TECNICO_PADRAO : String(d.responsavelTecnico).trim(),
         valorEstimado: null,
         criadoEm: Utils.agora(),
         criadoPor: u.email,
@@ -43,7 +44,7 @@ var ProcessoService = {
   },
 
   atualizar: function (id, d) {
-    var permitidos = ['titulo', 'objeto', 'numeroSuite', 'setorDemandante', 'responsavelEmail'];
+    var permitidos = ['titulo', 'objeto', 'numeroSuite', 'setorDemandante', 'responsavelEmail', 'responsavelTecnico'];
     var alt = { atualizadoEm: Utils.agora() };
     permitidos.forEach(function (k) { if (d[k] !== undefined) alt[k] = d[k]; });
     var p = repo('Processos').atualizar(id, alt);
@@ -88,7 +89,7 @@ var ProcessoService = {
       var ativas = tarefasAtivas[p.id] || [];
       return {
         id: p.id, numero: p.numero, titulo: p.titulo, status: p.status, fase: p.fase,
-        numeroSuite: p.numeroSuite, responsavelEmail: p.responsavelEmail, valorEstimado: p.valorEstimado,
+        numeroSuite: p.numeroSuite, responsavelEmail: p.responsavelEmail, responsavelTecnico: p.responsavelTecnico, valorEstimado: p.valorEstimado,
         atualizadoEm: p.atualizadoEm, pastaUrl: p.pastaUrl,
         etapasAtuais: ativas.map(function (t) { return { id: t.id, nome: t.nome, status: t.status, prazo: t.prazo }; }),
         atrasado: ativas.some(function (t) { return t.prazo && t.prazo < hoje; }),

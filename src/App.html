@@ -67,6 +67,12 @@ function opcoesUsuarios(sel) {
     return '<option value="' + esc(u.email) + '"' + (u.email === sel ? ' selected' : '') + '>' + esc(u.nome || u.email) + '</option>';
   }).join('');
 }
+/** Sugestões para o campo "Responsável técnico" (texto livre): padrão + nomes dos usuários. */
+function datalistUsuarios() {
+  var nomes = [S.ctx.responsavelTecnicoPadrao].concat(S.ctx.usuarios.map(function (u) { return u.nome; }))
+    .filter(function (n, i, arr) { return n && arr.indexOf(n) === i; });
+  return '<datalist id="lista-resp-tecnico">' + nomes.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
+}
 function opcoesTiposDoc(sel) {
   return S.ctx.tiposDocumento.map(function (t) {
     return '<option value="' + esc(t.codigo) + '"' + (t.codigo === sel ? ' selected' : '') + '>' + esc(t.nome) + '</option>';
@@ -190,7 +196,7 @@ function vProcessos() {
       ['EM_ANDAMENTO', 'SUSPENSO', 'CONCLUIDO', 'CANCELADO'].map(function (s) {
         return '<option value="' + s + '"' + (filtro.status === s ? ' selected' : '') + '>' + ROTULOS[s] + '</option>';
       }).join('') + '</select></div><div style="flex:0 0 auto"><button class="btn" data-acao="filtrar">Filtrar</button></div></div></div>' +
-      '<div class="card">' + (lista.length ? '<table><tr><th>Número</th><th>Título</th><th>Status</th><th>Fase</th><th>Etapa(s) atual(is)</th><th>Responsável</th><th class="num">Valor estimado</th></tr>' +
+      '<div class="card">' + (lista.length ? '<table><tr><th>Número</th><th>Título</th><th>Status</th><th>Fase</th><th>Etapa(s) atual(is)</th><th>Analista responsável</th><th class="num">Valor estimado</th></tr>' +
         lista.map(function (p) {
           return '<tr class="clicavel" data-acao="abrirProcesso" data-proc="' + esc(p.id) + '"><td><b>' + esc(p.numero) + '</b>' +
             (p.numeroSuite ? '<br><span class="ajuda">SUITE ' + esc(p.numeroSuite) + '</span>' : '') + '</td><td>' + esc(p.titulo) + '</td>' +
@@ -211,7 +217,9 @@ function vNovo() {
     '<label>Objeto da contratação <span class="obrig">*</span></label><textarea name="objeto"></textarea>' +
     '<div class="linha"><div><label>Setor demandante</label><input name="setorDemandante"></div>' +
     '<div><label>Nº do processo SUITE (se já houver)</label><input name="numeroSuite"></div></div>' +
-    '<label>Responsável</label><select name="responsavelEmail">' + opcoesUsuarios(S.ctx.usuario.email) + '</select>' +
+    '<div class="linha"><div><label>Analista responsável</label><select name="responsavelEmail">' + opcoesUsuarios(S.ctx.usuario.email) + '</select></div>' +
+    '<div><label>Responsável técnico</label><input name="responsavelTecnico" list="lista-resp-tecnico" value="' + esc(S.ctx.responsavelTecnicoPadrao) + '"></div></div>' +
+    datalistUsuarios() +
     '<p class="ajuda">Ao criar, o sistema gera o número do processo, cria a estrutura de pastas no Drive e inicia o fluxo.</p>' +
     '<div class="acoes"><button class="btn" data-acao="criarProcesso">Criar processo</button></div></div>');
 }
@@ -230,7 +238,8 @@ function vProcesso() {
       ['diligencias', 'Diligências (' + det.diligencias.length + ')'], ['dados', 'Dados'], ['historico', 'Histórico']];
     app('<div class="card"><div class="cab-proc"><div><h1 style="margin:0">' + esc(p.numero) + ' — ' + esc(p.titulo) + '</h1>' +
       '<div class="meta">' + tag(p.status) + ' &nbsp; Fase: <b>' + esc(nomeFase(p.fase)) + '</b> &nbsp;·&nbsp; SUITE: <b>' + esc(p.numeroSuite || '—') +
-      '</b> &nbsp;·&nbsp; Responsável: <b>' + esc(nomeUsuario(p.responsavelEmail)) + '</b> &nbsp;·&nbsp; Valor estimado: <b>' + brl(p.valorEstimado) + '</b></div>' +
+      '</b> &nbsp;·&nbsp; Analista responsável: <b>' + esc(nomeUsuario(p.responsavelEmail)) + '</b> &nbsp;·&nbsp; Responsável técnico: <b>' +
+      esc(p.responsavelTecnico || '—') + '</b> &nbsp;·&nbsp; Valor estimado: <b>' + brl(p.valorEstimado) + '</b></div>' +
       '<div class="meta">' + esc(p.objeto) + '</div></div>' +
       '<div class="acoes"><a class="btn sec peq" href="' + esc(p.pastaUrl) + '" target="_blank">📂 Pasta no Drive</a> ' + gestao + '</div></div></div>' +
       '<div class="abas">' + abas.map(function (a) {
@@ -284,7 +293,7 @@ function renderTrabalho() {
     (e.descricao ? '<div class="meta">' + esc(e.descricao) + '</div>' : '') +
     (t.observacao ? '<div class="meta">📝 ' + esc(t.observacao) + '</div>' : '') + '</div>' +
     '<div style="min-width:220px">' + (logosExternos(e.codigo) ? '<div class="logos-externos">' + logosExternos(e.codigo) + '</div>' : '') +
-    '<label style="margin-top:0">Responsável</label>' +
+    '<label style="margin-top:0">Analista responsável</label>' +
     (ed ? '<select id="sel-resp" data-change="atribuir">' + opcoesUsuarios(t.responsavelEmail) + '</select>' : '<div>' + esc(nomeUsuario(t.responsavelEmail)) + '</div>') +
     '</div></div></div>';
 
@@ -503,7 +512,9 @@ function abaDados(alvo) {
     '<label>Objeto</label><textarea name="objeto"' + dis + '>' + esc(p.objeto) + '</textarea>' +
     '<div class="linha"><div><label>Nº SUITE</label><input name="numeroSuite" value="' + esc(p.numeroSuite) + '"' + dis + '></div>' +
     '<div><label>Setor demandante</label><input name="setorDemandante" value="' + esc(p.setorDemandante) + '"' + dis + '></div></div>' +
-    '<label>Responsável</label><select name="responsavelEmail"' + dis + '>' + opcoesUsuarios(p.responsavelEmail) + '</select>' +
+    '<div class="linha"><div><label>Analista responsável</label><select name="responsavelEmail"' + dis + '>' + opcoesUsuarios(p.responsavelEmail) + '</select></div>' +
+    '<div><label>Responsável técnico</label><input name="responsavelTecnico" list="lista-resp-tecnico" value="' + esc(p.responsavelTecnico) + '"' + dis + '></div></div>' +
+    datalistUsuarios() +
     '<p class="ajuda">Criado em ' + dataBR(p.criadoEm) + ' por ' + esc(nomeUsuario(p.criadoPor)) + '</p>' +
     (ed ? '<button class="btn" data-acao="salvarProcesso">Salvar</button>' : '') + '</div>' +
     '<div class="card"><h2>Informações registradas nas etapas</h2>' + (chaves.length ? '<table><tr><th>Campo</th><th>Valor</th></tr>' +
@@ -688,7 +699,7 @@ var ACOES = {
 
 var MUDANCAS = {
   atribuir: function (el) {
-    ocupado(api('atribuirTarefa', S.tarefaId, el.value), 'Responsável alterado.');
+    ocupado(api('atribuirTarefa', S.tarefaId, el.value), 'Analista responsável alterado.');
   },
   metodoMapa: function (el) {
     api('calcularMapa', S.procId, el.value).then(function (m) { S.tar.mapa = m; renderTrabalho(); });

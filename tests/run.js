@@ -152,6 +152,10 @@ teste('Criação do processo: número, pastas no Drive e primeira etapa', () => 
   const p2 = env.ok('criarProcesso', { titulo: 'Outro', objeto: 'Outro objeto' });
   const ano = new Date().getFullYear();
   assert.strictEqual(p1.numero, 'CESOP-' + ano + '-001');
+  assert.strictEqual(p1.responsavelTecnico, 'Daniel Boyadijan', 'responsável técnico padrão');
+  const p3 = env.ok('criarProcesso', { titulo: 'T', objeto: 'O', responsavelTecnico: 'Outra Pessoa' });
+  assert.strictEqual(p3.responsavelTecnico, 'Outra Pessoa');
+  assert.strictEqual(env.ok('atualizarProcesso', p3.id, { responsavelTecnico: 'Fulano' }).responsavelTecnico, 'Fulano');
   assert.strictEqual(p2.numero, 'CESOP-' + ano + '-002');
   const pasta = env.estado.pastas[p1.pastaId];
   assert.ok(pasta.nome.startsWith(p1.numero));

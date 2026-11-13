@@ -13,6 +13,7 @@ var APP = {
   NOME_PLANILHA_BD: 'CESOP - Processos de Contratação (Banco de Dados)',
   NOME_PASTA_RAIZ: '_Processos de CONTRATAÇÃO (Sistema)',
   PREFIXO_NUMERO: 'CESOP',
+  RESPONSAVEL_TECNICO_PADRAO: 'Daniel Boyadijan',
   CACHE_TTL_SEG: 600,
   // Propriedades do script (Projeto > Configurações > Propriedades do script)
   PROP: {
@@ -102,7 +103,7 @@ var SCHEMA = {
   // ---------------------------------------------------------------- Operação
   Processos: ['id', 'numero', 'titulo', 'objeto', 'fluxoId', 'numeroSuite', 'status', 'fase',
     'setorDemandante', 'responsavelEmail', 'valorEstimado:n', 'pastaId', 'pastaUrl', 'pastas:j',
-    'criadoEm', 'criadoPor', 'atualizadoEm', 'concluidoEm'],
+    'criadoEm', 'criadoPor', 'atualizadoEm', 'concluidoEm', 'responsavelTecnico'],
   Tarefas: ['id', 'processoId', 'etapaCodigo', 'nome', 'tipo', 'fase', 'status', 'responsavelEmail',
     'setor', 'criadaEm', 'prazo', 'concluidaEm', 'concluidaPor', 'chegadas:n', 'origemTarefaId',
     'enviadoEm', 'referenciaEnvio', 'retornoEm', 'referenciaRetorno', 'observacao'],

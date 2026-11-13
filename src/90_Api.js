@@ -16,6 +16,7 @@ var API = {
       usuarios: ConfigService.usuarios().filter(function (x) { return x.ativo; })
         .map(function (x) { return { email: x.email, nome: x.nome, setor: x.setor }; }),
       metodosMapa: PesquisaPrecoService.METODOS,
+      responsavelTecnicoPadrao: APP.RESPONSAVEL_TECNICO_PADRAO,
       dbUrl: u.papel === PAPEIS.ADMIN ? Db.planilha().getUrl() : '',
       pastaRaizUrl: u.papel === PAPEIS.ADMIN ? DriveService.raiz().getUrl() : '',
       sistemasExternos: Object.keys(APP.SISTEMAS_EXTERNOS).map(function (k) {
