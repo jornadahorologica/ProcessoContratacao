@@ -21,6 +21,20 @@ var APP = {
     NOTIFICAR: 'NOTIFICAR_EMAIL',
     APP_URL: 'APP_URL',
     LIMITE_DESVIO_MAPA: 'LIMITE_DESVIO_MAPA'
+  },
+  /**
+   * Sistemas externos exibidos como logo clicável no canto superior direito
+   * das telas indicadas em "etapas" (códigos de cfg_Etapas; NOVO = tela
+   * "Novo processo"). O logo é lido do Drive pelo servidor, então não
+   * precisa estar compartilhado com os usuários.
+   */
+  SISTEMAS_EXTERNOS: {
+    SUITE: {
+      nome: 'SUITE',
+      url: 'https://suite.ce.gov.br/',
+      logoFileId: '1tCyDEoBOZ4DfYy654leem4ev7YgVKM_L',
+      etapas: ['NOVO', 'ABRIR_SUITE']
+    }
   }
 };
 

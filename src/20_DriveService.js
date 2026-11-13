@@ -46,5 +46,23 @@ var DriveService = {
 
   mover: function (fileId, pasta) {
     DriveApp.getFileById(fileId).moveTo(pasta);
+  },
+
+  /** Imagem do Drive como data URI (com cache), para exibir sem exigir compartilhamento. */
+  imagemDataUri: function (fileId) {
+    if (!fileId) return '';
+    var cache = CacheService.getScriptCache();
+    var chave = 'img_' + fileId;
+    var salvo = cache.get(chave);
+    if (salvo) return salvo;
+    try {
+      var blob = DriveApp.getFileById(fileId).getBlob();
+      var uri = 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
+      try { cache.put(chave, uri, 21600); } catch (e) { /* imagem maior que o limite do cache */ }
+      return uri;
+    } catch (e) {
+      console.warn('Imagem não acessível (' + fileId + '): ' + e);
+      return '';
+    }
   }
 };

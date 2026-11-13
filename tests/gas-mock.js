@@ -89,6 +89,7 @@ function criarAmbiente(opcoes) {
     getName() { return this.nome; }
     getUrl() { return 'https://drive.google.com/file/d/' + this.id; }
     getMimeType() { return this.mime; }
+    getBlob() { return { getContentType: () => 'image/png', getBytes: () => [137, 80, 78, 71] }; }
     moveTo(pasta) { this.pai = pasta.id; return this; }
     makeCopy(nome, pasta) {
       const id = novoId('f');
@@ -172,6 +173,7 @@ function criarAmbiente(opcoes) {
         return fmt.replace('yyyy', p.year).replace('MM', p.month).replace('dd', p.day);
       },
       base64Decode: (s) => Array.from(Buffer.from(s, 'base64')),
+      base64Encode: (b) => Buffer.from(b).toString('base64'),
       newBlob: (bytes, mime, nome) => ({ bytes, mime, nome })
     },
     MailApp: { sendEmail: (m) => estado.emails.push(m) },

@@ -110,6 +110,13 @@ function valoresForm(raiz) {
   return v;
 }
 function app(html) { $('#app').innerHTML = html; }
+/** Logos clicáveis dos sistemas externos configurados para a tela/etapa (APP.SISTEMAS_EXTERNOS). */
+function logosExternos(tela) {
+  return (S.ctx.sistemasExternos || []).filter(function (s) { return s.etapas.indexOf(tela) >= 0; }).map(function (s) {
+    return '<a class="logo-externo" href="' + esc(s.url) + '" target="_blank" rel="noopener" title="Abrir o ' + esc(s.nome) + ' em nova aba">' +
+      (s.logo ? '<img src="' + s.logo + '" alt="' + esc(s.nome) + '">' : '<span>Abrir ' + esc(s.nome) + ' ↗</span>') + '</a>';
+  }).join('');
+}
 
 // ------------------------------------------------------------------ navegação
 function ir(view, params) {
@@ -197,7 +204,8 @@ function vProcessos() {
 // ------------------------------------------------------------------ NOVO
 function vNovo() {
   if (!podeEditar()) { app('<div class="card">Seu perfil é somente leitura.</div>'); return; }
-  app('<h1>Novo processo de contratação</h1><div class="card" id="form-novo" style="max-width:760px">' +
+  app('<div class="card" id="form-novo" style="max-width:760px"><div class="cab-proc"><h1>Novo processo de contratação</h1>' +
+    '<div class="logos-externos">' + logosExternos('NOVO') + '</div></div>' +
     '<label>Fluxo</label><select name="fluxoId">' + S.ctx.fluxos.map(function (f) { return '<option value="' + esc(f.id) + '">' + esc(f.nome) + '</option>'; }).join('') + '</select>' +
     '<label>Título <span class="obrig">*</span></label><input name="titulo" placeholder="Ex.: Novo contrato SGS">' +
     '<label>Objeto da contratação <span class="obrig">*</span></label><textarea name="objeto"></textarea>' +
@@ -275,7 +283,8 @@ function renderTrabalho() {
     (t.concluidaEm ? ' &nbsp;·&nbsp; Encerrada em ' + dataBR(t.concluidaEm) + ' por ' + esc(nomeUsuario(t.concluidaPor)) : '') + '</div>' +
     (e.descricao ? '<div class="meta">' + esc(e.descricao) + '</div>' : '') +
     (t.observacao ? '<div class="meta">📝 ' + esc(t.observacao) + '</div>' : '') + '</div>' +
-    '<div style="min-width:220px"><label style="margin-top:0">Responsável</label>' +
+    '<div style="min-width:220px">' + (logosExternos(e.codigo) ? '<div class="logos-externos">' + logosExternos(e.codigo) + '</div>' : '') +
+    '<label style="margin-top:0">Responsável</label>' +
     (ed ? '<select id="sel-resp" data-change="atribuir">' + opcoesUsuarios(t.responsavelEmail) + '</select>' : '<div>' + esc(nomeUsuario(t.responsavelEmail)) + '</div>') +
     '</div></div></div>';
 

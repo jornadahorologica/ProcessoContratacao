@@ -17,7 +17,11 @@ var API = {
         .map(function (x) { return { email: x.email, nome: x.nome, setor: x.setor }; }),
       metodosMapa: PesquisaPrecoService.METODOS,
       dbUrl: u.papel === PAPEIS.ADMIN ? Db.planilha().getUrl() : '',
-      pastaRaizUrl: u.papel === PAPEIS.ADMIN ? DriveService.raiz().getUrl() : ''
+      pastaRaizUrl: u.papel === PAPEIS.ADMIN ? DriveService.raiz().getUrl() : '',
+      sistemasExternos: Object.keys(APP.SISTEMAS_EXTERNOS).map(function (k) {
+        var s = APP.SISTEMAS_EXTERNOS[k];
+        return { nome: s.nome, url: s.url, etapas: s.etapas, logo: DriveService.imagemDataUri(s.logoFileId) };
+      })
     };
   }],
 

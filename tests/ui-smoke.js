@@ -15,7 +15,13 @@ const SRC = path.join(__dirname, '..', 'src');
 const saida = process.argv[2];
 
 function backend() {
-  const { ctx } = criarAmbiente();
+  const { ctx, estado } = criarAmbiente();
+  // Logo simulado do SUITE (no Apps Script ele é lido do Drive)
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="120" height="40" rx="6" fill="#0b6e4f"/>' +
+    '<text x="60" y="27" font-family="Arial" font-size="20" font-weight="bold" fill="#fff" text-anchor="middle">SUITE</text></svg>';
+  estado.arquivos['1tCyDEoBOZ4DfYy654leem4ev7YgVKM_L'] = {
+    getBlob: () => ({ getContentType: () => 'image/svg+xml', getBytes: () => Array.from(Buffer.from(svg)) })
+  };
   vm.createContext(ctx);
   fs.readdirSync(SRC).filter((f) => f.endsWith('.js')).sort()
     .forEach((f) => vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f }));
@@ -56,11 +62,15 @@ function montarHtml() {
   await page.click('text=+ Novo processo');
   await page.fill('[name=titulo]', 'Novo contrato SGS');
   await page.fill('[name=objeto]', 'Sustentação e evolução do SGS');
+  await page.waitForSelector('a.logo-externo[href="https://suite.ce.gov.br/"] img');
+  await foto('0-novo-processo');
   await page.click('text=Criar processo');
   await page.waitForSelector('.timeline');
   await esperarCarregar();
 
-  // Etapa 1: Abrir processo SUITE
+  // Etapa 1: Abrir processo SUITE (logo do SUITE no canto superior direito)
+  await page.waitForSelector('#area-trabalho a.logo-externo[target=_blank] img');
+  await foto('1-abrir-suite');
   await page.fill('[name=numeroSuite]', '12345/2026');
   await page.fill('[name=dataAberturaSuite]', '2026-11-10');
   await page.click('text=Salvar dados');
@@ -77,7 +87,7 @@ function montarHtml() {
   }
   await page.click('text=Painel');
   await page.waitForSelector('.kanban .cartao');
-  await foto('1-painel');
+  await foto('3-painel');
   await page.click('text=Processos');
   await page.waitForSelector('tr.clicavel');
   await page.click('text=Administração');
