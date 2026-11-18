@@ -1,0 +1,30 @@
+<script>
+/* Js_Inicio — Busca global (Ctrl+K) e início do sistema. */
+// ------------------------------------------------------------------ busca global (Ctrl+K)
+document.addEventListener('keydown', function (ev) {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); $('#busca-global').focus(); $('#busca-global').select(); }
+});
+$('#busca-global').addEventListener('keydown', function (ev) {
+  if (ev.key !== 'Enter') return;
+  S.filtro = { texto: ev.target.value.trim(), status: '' };
+  ir('processos');
+});
+aplicarIcones(document);
+
+// ------------------------------------------------------------------ início
+api('contexto').then(function (ctx) {
+  S.ctx = ctx;
+  var PAPEL = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA: 'Analista', CONSULTA: 'Consulta' };
+  $('#usuario').textContent = ctx.usuario.nome;
+  $('#usuario-papel').textContent = PAPEL[ctx.usuario.papel] || ctx.usuario.papel;
+  $('#avatar').textContent = iniciais(ctx.usuario.nome);
+  if (ctx.usuario.papel === 'ADMIN') { $('#menu-admin').classList.remove('oculto'); $('#rotulo-gestao').classList.remove('oculto'); }
+  if (!podeEditar()) $('#menu a[data-view=novo]').classList.add('oculto');
+  var suite = (ctx.sistemasExternos || []).filter(function (x) { return x.nome === 'SUITE'; })[0];
+  if (suite) { $('#botao-suite').href = suite.url; $('#botao-suite').classList.remove('oculto'); }
+  avisoConfiguracao();
+  Rotas.iniciar();
+}).catch(function (e) {
+  app('<div class="card"><h2>Não foi possível entrar</h2><p>' + esc(e.message) + '</p></div>');
+});
+</script>

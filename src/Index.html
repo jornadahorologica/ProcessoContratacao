@@ -44,6 +44,15 @@
   <div id="toasts" class="toasts"></div>
   <div id="ocupado" class="ocupado oculto"><div class="ocupado-caixa"><div class="spinner"></div><span>Processando…</span></div></div>
   <div id="dialogo" class="veu oculto"></div>
-  <?!= incluir('App') ?>
+  <!-- Scripts da interface (a ordem importa: Js_Inicio por último) -->
+  <?!= incluir('Js_Base') ?>
+  <?!= incluir('Js_Rotas') ?>
+  <?!= incluir('Js_Telas') ?>
+  <?!= incluir('Js_Processo') ?>
+  <?!= incluir('Js_Blocos') ?>
+  <?!= incluir('Js_Abas') ?>
+  <?!= incluir('Js_Admin') ?>
+  <?!= incluir('Js_Acoes') ?>
+  <?!= incluir('Js_Inicio') ?>
 </body>
 </html>

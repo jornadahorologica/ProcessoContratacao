@@ -53,7 +53,7 @@ function montarHtml() {
   </script>`;
   return ler('Index')
     .replace("<?!= incluir('Estilos') ?>", () => ler('Estilos')) // função: evita a interpretação de $$ e $'
-    .replace("<?!= incluir('App') ?>", () => ponte + ler('App'));
+    .replace(/<\?!= incluir\('(Js_\w+)'\) \?>/g, (m, nome) => (nome === 'Js_Base' ? ponte : '') + ler(nome));
 }
 
 (async () => {

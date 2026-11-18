@@ -1,0 +1,240 @@
+<script>
+/* Js_Blocos — Blocos da área de trabalho da etapa (formulário, documentos, cotações, mapa...). */
+// ---------- blocos da área de trabalho
+/** Sugestão de preenchimento (cfg_Campos.valorPadrao) com botão "Usar". */
+function sugestaoHtml(c, ed) {
+  var s = S.tar && S.tar.sugestoes && S.tar.sugestoes[c.chave];
+  if (!s || !ed) return '';
+  var atual = S.tar.valores[c.chave];
+  if (atual !== undefined && String(atual) === String(s.valor)) return '';
+  var exibir = c.tipo === 'moeda' ? brl(s.valor) : String(s.valor);
+  if (exibir.length > 220) exibir = exibir.slice(0, 220) + '…';
+  return '<div class="sugestao">' + ic('lampada', 14) + ' <b>Sugestão</b> <span class="ajuda">(' + esc(s.origem) + ')</span>: ' + esc(exibir) +
+    ' <button class="btn sec peq" data-acao="usarSugestao" data-campo="' + esc(c.chave) + '">Usar</button></div>';
+}
+
+function permiteNsa(c) { return c.tipo === 'secaoLei' && /(^|[,;\s])NSA($|[,;\s])/i.test(c.opcoes || ''); }
+
+/** Seção de documento (ex.: inciso do ETP): recolhível, com "Não se aplica" quando permitido. */
+function secaoHtml(c, w, ed) {
+  var v = w.valores[c.chave] || '';
+  var nsa = permiteNsa(c) && w.valores[c.chave + '_nsa'] === 'true';
+  var ok = String(v).trim() !== '';
+  var ico = ok ? (nsa ? '<span class="ajuda">—</span>' : '<span style="color:var(--verde)">' + ic('check', 16) + '</span>') : '<span class="ponto"></span>';
+  var dis = ed ? '' : ' disabled';
+  return '<details class="secao' + (ok ? ' ok' : '') + '"' + (ok ? '' : ' open') + ' data-secao="' + esc(c.chave) + '">' +
+    '<summary><span class="ico">' + ico + '</span><span>' + esc(c.rotulo) + (permiteNsa(c) ? '' : ' <span class="obrig">*</span>') + '</span>' +
+    (nsa ? ' <span class="tag RASCUNHO">Não se aplica</span>' : '') + '</summary><div class="secao-corpo">' +
+    (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') +
+    (permiteNsa(c) ? '<label class="check" style="font-weight:normal"><input type="checkbox" name="' + esc(c.chave) + '_nsa" data-change="nsa"' +
+      (nsa ? ' checked' : '') + dis + '> Não se aplica <span class="ajuda">(art. 18, §2º — justifique abaixo)</span></label>' : '') +
+    '<textarea class="grande" name="' + esc(c.chave) + '" placeholder="' + (nsa ? 'Justificativa do “Não se aplica”' : 'Texto da seção') + '"' + dis + '>' +
+    esc(v) + '</textarea>' + sugestaoHtml(c, ed) + '</div></details>';
+}
+
+function campoHtml(c, valor, ed) {
+  if (c.tipo === 'secaoLei') return secaoHtml(c, S.tar, ed);
+  var dis = ed ? '' : ' disabled';
+  var v = valor === undefined || valor === null ? '' : valor;
+  var rot = '<label>' + esc(c.rotulo) + (c.obrigatorio ? ' <span class="obrig">*</span>' : '') + '</label>';
+  var inp;
+  switch (c.tipo) {
+    case 'textoLongo': inp = '<textarea name="' + esc(c.chave) + '"' + dis + '>' + esc(v) + '</textarea>'; break;
+    case 'inteiro': inp = '<input type="number" step="1" min="0" inputmode="numeric" data-inteiro="1" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
+    case 'numero': case 'moeda': inp = '<input type="number" step="' + (c.tipo === 'moeda' ? '0.01' : 'any') + '" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
+    case 'data': inp = '<input type="date" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
+    case 'email': inp = '<input type="email" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
+    case 'simNao': c = Object.assign({}, c, { opcoes: 'SIM;NAO' }); // segue para seleção
+    case 'selecao':
+      inp = '<select name="' + esc(c.chave) + '"' + dis + '><option value="">— selecione —</option>' +
+        String(c.opcoes || '').split(';').filter(String).map(function (o) {
+          o = o.trim();
+          return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + esc(o === 'NAO' ? 'NÃO' : o) + '</option>';
+        }).join('') + '</select>';
+      break;
+    default: inp = '<input name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>';
+  }
+  return '<div>' + rot + inp + (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') + sugestaoHtml(c, ed) + '</div>';
+}
+
+/** Renderiza os campos; consecutivos com o mesmo "linha" (cfg_Campos) ficam lado a lado. */
+function camposEmLinhas(campos, w, ed) {
+  var html = '';
+  for (var i = 0; i < campos.length; i++) {
+    var c = campos[i];
+    var grupo = [c];
+    while (c.linha && c.tipo !== 'secaoLei' && campos[i + 1] && campos[i + 1].linha === c.linha) grupo.push(campos[++i]);
+    var partes = grupo.map(function (x) { return campoHtml(x, w.valores[x.chave], ed); }).join('');
+    html += grupo.length > 1 ? '<div class="linha">' + partes + '</div>' : partes;
+  }
+  return html;
+}
+
+function bFormulario(w, ed) {
+  if (!w.campos.length) return '';
+  var secoes = w.campos.filter(function (c) { return c.tipo === 'secaoLei'; });
+  var feitas = secoes.filter(function (c) { return String(w.valores[c.chave] || '').trim() !== ''; }).length;
+  var progresso = secoes.length ? '<span class="progresso"><span style="width:' + Math.round(100 * feitas / secoes.length) + '%"></span></span>' +
+    '<span class="ajuda">' + feitas + ' de ' + secoes.length + ' seções preenchidas</span>' : '';
+  return '<div class="bloco" id="bloco-form">' + cabBloco('editar', 'Dados da etapa', '<span class="acoes">' + progresso +
+    (secoes.length ? '<button class="btn sec peq" data-acao="expandirSecoes">Expandir/recolher</button>' : '') + '</span>') +
+    camposEmLinhas(w.campos, w, ed) +
+    (ed ? '<div class="acoes barra-salvar"><button class="btn" data-acao="salvarCampos" data-raiz="#bloco-form">' + ic('check', 15) + 'Salvar dados</button>' +
+      '<span class="ajuda">Salve com frequência — os textos ficam guardados como rascunho até a conclusão da etapa.</span></div>' : '') + '</div>';
+}
+
+function bDecisao(w, ed) {
+  if (!w.decisao) return '';
+  var v = w.valores[w.decisao.variavel] || '';
+  return '<div class="bloco" id="bloco-decisao">' + cabBloco('decisao', 'Decisão') + '<p>' + esc(w.etapa.descricao || w.etapa.nome) + '</p>' +
+    w.decisao.opcoes.map(function (o) {
+      return '<label class="check" style="font-weight:normal"><input type="radio" name="' + esc(w.decisao.variavel) + '" value="' + esc(o) + '"' +
+        (o === v ? ' checked' : '') + (ed ? '' : ' disabled') + '> ' + esc(o === 'NAO' ? 'NÃO' : o) + '</label>';
+    }).join('') +
+    (ed ? '<div class="acoes" style="margin-top:8px"><button class="btn" data-acao="salvarCampos" data-raiz="#bloco-decisao">Registrar decisão</button></div>' : '') + '</div>';
+}
+
+function bChecklist(w, ed) {
+  if (!w.checklist.length) return '';
+  return '<div class="bloco" id="bloco-check">' + cabBloco('tarefas', 'Checklist') + w.checklist.map(function (i) {
+    return '<label class="check" style="font-weight:normal"><input type="checkbox" data-acao="checklist" data-item="' + esc(i.id) + '"' +
+      (i.marcado ? ' checked' : '') + (ed ? '' : ' disabled') + '> ' + esc(i.descricao) + (i.obrigatorio ? ' <span class="obrig">*</span>' : '') + '</label>';
+  }).join('') + '</div>';
+}
+
+function exigeAssinatura(tipo) { return ((S.ctx.assinaturasPorTipo || {})[tipo] || []).length > 0; }
+
+/** Ações do documento conforme status e exigência de assinatura no SUITE. */
+function acoesDoc(d, ed) {
+  if (!ed) return '';
+  var b = function (acao, rotulo, extra, cls) {
+    return '<button class="btn ' + (cls || 'sec') + ' peq" data-acao="' + acao + '" data-doc="' + esc(d.id) + '"' + (extra || '') + '>' + rotulo + '</button> ';
+  };
+  if (exigeAssinatura(d.tipoCodigo) && d.origem === 'GERADO') {
+    if (d.status === 'RASCUNHO') return b('enviarAssinatura', ic('assinar', 14) + 'Enviar para assinatura (SUITE)', '', '');
+    if (d.status === 'EM_ASSINATURA') return b('statusDoc', 'Cancelar assinatura', ' data-status="RASCUNHO"');
+    return b('statusDoc', 'Voltar a rascunho', ' data-status="RASCUNHO"');
+  }
+  return b('statusDoc', d.status === 'FINAL' ? 'Voltar a rascunho' : 'Marcar como final', ' data-status="' + (d.status === 'FINAL' ? 'RASCUNHO' : 'FINAL') + '"');
+}
+
+/** Linha de assinaturas do documento (quem já assinou no SUITE). */
+function linhaAssinaturas(d, assinaturas, ed) {
+  var l = (assinaturas || []).filter(function (a) { return a.documentoId === d.id; });
+  if (!l.length || d.status === 'RASCUNHO') return '';
+  return '<tr class="sub"><td colspan="6"><div class="assinaturas">' +
+    (d.pdfUrl ? '<a class="btn sec peq" href="' + esc(d.pdfUrl) + '" target="_blank">' + ic('doc', 14) + 'PDF para o SUITE</a> ' : '') +
+    l.map(function (a) {
+      var assinado = a.status === 'ASSINADO';
+      return '<span class="assinante ' + (assinado ? 'ok' : '') + '">' + (assinado ? ic('check', 13) : ic('relogio', 13)) + ' <b>' + esc(a.signatario) + '</b>' +
+        (a.cargo ? ' <span class="ajuda">' + esc(a.cargo) + '</span>' : '') +
+        (assinado ? ' <span class="ajuda">em ' + dataBR(a.assinadoEm) + '</span>' :
+          (ed && d.status === 'EM_ASSINATURA' ? ' <button class="btn peq" data-acao="registrarAssinatura" data-id="' + esc(a.id) + '">Assinou</button>' : '')) +
+        '</span>';
+    }).join('') + '</div></td></tr>';
+}
+
+function tabelaDocs(docs, ed, assinaturas) {
+  if (!docs.length) return '<div class="vazio">Nenhum documento.</div>';
+  return '<table><tr><th>Documento</th><th>Tipo</th><th>Versão</th><th>Status</th><th>Criado</th><th></th></tr>' + docs.map(function (d) {
+    var assina = exigeAssinatura(d.tipoCodigo);
+    return '<tr><td><a href="' + esc(d.url) + '" target="_blank">' + esc(d.nome) + '</a>' +
+      (assina ? '<br><span class="ajuda">' + ic('assinar', 12) + ' Assinam: ' + esc(S.ctx.assinaturasPorTipo[d.tipoCodigo].map(function (a) { return a.signatario === '{{responsavelTecnico}}' ? 'Resp. técnico' : a.signatario; }).join(', ')) + '</span>' : '') +
+      '</td><td>' + esc(nomeTipoDoc(d.tipoCodigo)) + '</td>' +
+      '<td>v' + esc(d.versao) + '</td><td>' + tag(d.status) + '</td><td>' + dataBR(d.criadoEm) + '<br><span class="ajuda">' + esc(nomeUsuario(d.criadoPor)) + '</span></td>' +
+      '<td>' + acoesDoc(d, ed) + '</td></tr>' + linhaAssinaturas(d, assinaturas, ed);
+  }).join('') + '</table>';
+}
+
+function formAnexo(prefixo, tipoPadrao) {
+  return '<div class="linha" style="margin-top:10px"><div><label>Tipo</label><select id="' + prefixo + '-tipo">' + opcoesTiposDoc(tipoPadrao || 'OUTRO') + '</select></div>' +
+    '<div><label>Arquivo</label><input type="file" id="' + prefixo + '-arq"></div>' +
+    '<div style="flex:0 0 auto;align-self:end"><button class="btn sec" data-acao="anexar" data-prefixo="' + prefixo + '">' + ic('anexo', 15) + 'Anexar</button></div></div>' +
+    '<div class="linha"><div><label>…ou vincular arquivo já existente no Drive (link)</label><input id="' + prefixo + '-link" placeholder="https://drive.google.com/..."></div>' +
+    '<div style="flex:0 0 auto;align-self:end"><button class="btn sec" data-acao="vincular" data-prefixo="' + prefixo + '">' + ic('link', 15) + 'Vincular</button></div></div>';
+}
+
+function bDocumentos(w, ed) {
+  var tipo = w.etapa.documentoTipo;
+  return '<div class="bloco" id="bloco-docs">' + cabBloco('doc', 'Documentos' + (tipo ? ' — ' + esc(nomeTipoDoc(tipo)) : ''),
+    ed && tipo && tipo !== 'MAPA_PRECOS' ? '<button class="btn peq" data-acao="gerarDoc" data-tipo="' + esc(tipo) + '">' + ic('editar', 14) + 'Gerar a partir do modelo</button>' : '') +
+    tabelaDocs(w.documentos, ed, w.assinaturas) + (ed ? formAnexo('wt', tipo) : '') + '</div>';
+}
+
+function bSolicitacao(w, ed) {
+  var t = w.tarefa;
+  var h = '<div class="bloco" id="bloco-solic">' + cabBloco('enviar', 'Solicitação a outro setor');
+  if (t.enviadoEm) h += '<div class="info-linha">' + ic('enviar', 15) + 'Enviado em <b>' + dataBR(t.enviadoEm) + '</b>' + (t.referenciaEnvio ? ' — ' + esc(t.referenciaEnvio) : '') + '</div>';
+  if (t.retornoEm) h += '<div class="info-linha">' + ic('receber', 15) + 'Retorno em <b>' + dataBR(t.retornoEm) + '</b>' + (t.referenciaRetorno ? ' — ' + esc(t.referenciaRetorno) : '') + '</div>';
+  if (ed && t.status === 'ABERTA') {
+    h += '<div class="linha"><div><label>' + (t.retornoEm ? 'Novo envio — ' : '') + 'Referência do envio (ofício, despacho, e-mail)</label><input id="env-ref"></div>' +
+      '<div style="flex:0 0 160px"><label>Data</label><input type="date" id="env-data" value="' + hojeISO() + '"></div>' +
+      '<div style="flex:0 0 auto;align-self:end"><button class="btn" data-acao="registrarEnvio">' + ic('enviar', 15) + 'Registrar envio</button></div></div>';
+  }
+  if (ed && t.status === 'AGUARDANDO_RETORNO') {
+    h += '<div class="info-linha aguardando">' + ic('relogio', 15) + '<b>Aguardando retorno</b>' + (t.enviadoEm ? ' há ' + diasEntre(t.enviadoEm, hojeISO()) + ' dia(s)' : '') + '</div><div class="linha"><div><label>Referência do retorno</label><input id="ret-ref"></div>' +
+      '<div style="flex:0 0 160px"><label>Data</label><input type="date" id="ret-data" value="' + hojeISO() + '"></div>' +
+      '<div style="flex:0 0 auto;align-self:end"><button class="btn" data-acao="registrarRetorno">' + ic('receber', 15) + 'Registrar retorno</button></div></div>';
+  }
+  return h + '</div>';
+}
+
+function bCotacoes(w, ed) {
+  var cot = w.cotacoes || [];
+  var h = '<div class="bloco" id="bloco-cot">' + cabBloco('dinheiro', 'Cotações');
+  h += cot.length ? '<table><tr><th>Item</th><th>Fornecedor</th><th>Fonte</th><th>Data</th><th class="num">Qtd</th><th class="num">Valor unit.</th><th>Considerada</th><th></th></tr>' +
+    cot.map(function (c) {
+      return '<tr><td>' + esc(c.item) + (c.descricao ? '<br><span class="ajuda">' + esc(c.descricao) + '</span>' : '') + '</td><td>' + esc(c.fornecedor) +
+        (c.cnpj ? '<br><span class="ajuda">' + esc(c.cnpj) + '</span>' : '') + '</td><td>' + esc(c.fonte) + '</td><td>' + dataBR(c.dataCotacao) + '</td>' +
+        '<td class="num">' + esc(c.quantidade) + ' ' + esc(c.unidade) + '</td><td class="num">' + brl(c.valorUnitario) + '</td>' +
+        '<td>' + (ed ? '<input type="checkbox" data-acao="toggleCotacao" data-id="' + esc(c.id) + '"' + (c.considerado ? ' checked' : '') + '>' : (c.considerado ? 'Sim' : 'Não')) + '</td>' +
+        '<td>' + (ed ? '<button class="btn sec peq" data-acao="removerCotacao" data-id="' + esc(c.id) + '">Excluir</button>' : '') + '</td></tr>';
+    }).join('') + '</table>' : '<div class="vazio">Nenhuma cotação registrada.</div>';
+  if (ed) {
+    h += '<details style="margin-top:10px"' + (cot.length ? '' : ' open') + '><summary><b>+ Registrar cotação</b></summary><div id="form-cot">' +
+      '<div class="linha"><div><label>Item <span class="obrig">*</span></label><input name="item" list="lista-itens" placeholder="Mesmo nome agrupa as cotações"></div>' +
+      '<div><label>Descrição</label><input name="descricao"></div></div>' +
+      '<datalist id="lista-itens">' + Array.from(new Set(cot.map(function (c) { return c.item; }))).map(function (i) { return '<option value="' + esc(i) + '">'; }).join('') + '</datalist>' +
+      '<div class="linha"><div><label>Unidade</label><input name="unidade" placeholder="UST, mês, un"></div><div><label>Quantidade</label><input type="number" name="quantidade" value="1"></div>' +
+      '<div><label>Valor unitário (R$) <span class="obrig">*</span></label><input type="number" step="0.01" name="valorUnitario"></div></div>' +
+      '<div class="linha"><div><label>Fonte</label><select name="fonte">' + (w.fontes || []).map(function (f) { return '<option>' + esc(f) + '</option>'; }).join('') + '</select></div>' +
+      '<div><label>Fornecedor / órgão</label><input name="fornecedor"></div><div><label>CNPJ</label><input name="cnpj"></div></div>' +
+      '<div class="linha"><div><label>Data da cotação</label><input type="date" name="dataCotacao"></div><div><label>Referência (link, nº contrato, ata)</label><input name="referencia"></div></div>' +
+      '<div class="acoes" style="margin-top:10px"><button class="btn" data-acao="salvarCotacao">Adicionar cotação</button></div></div></details>';
+  }
+  return h + '</div>';
+}
+
+function bMapa(w, ed) {
+  var m = w.mapa;
+  var h = '<div class="bloco" id="bloco-mapa"><h3><span><span class="ib">' + ic('grafico', 16) + '</span>Mapa comparativo</span><span class="acoes">' +
+    '<select id="mapa-metodo" data-change="metodoMapa" style="width:auto">' + Object.keys(S.ctx.metodosMapa).map(function (k) {
+      return '<option value="' + k + '"' + (k === m.metodo ? ' selected' : '') + '>' + esc(S.ctx.metodosMapa[k]) + '</option>';
+    }).join('') + '</select>' +
+    (ed ? '<button class="btn peq" data-acao="gerarMapa">' + ic('doc', 14) + 'Gerar documento do mapa</button>' : '') + '</span></h3>';
+  if (!m.itens.length) return h + '<div class="vazio">Nenhuma cotação registrada na etapa de pesquisa de preços.</div></div>';
+  h += '<p class="ajuda">Valores com variação maior que ' + Math.round(m.limiteDesvio * 100) + '% em relação à mediana aparecem em vermelho. Desmarque-os na pesquisa de preços se forem descartados.</p>';
+  m.itens.forEach(function (i) {
+    h += '<h3 style="margin-top:12px">' + esc(i.item) + (i.descricao ? ' — <span class="ajuda">' + esc(i.descricao) + '</span>' : '') + '</h3>' +
+      '<table><tr><th>Fornecedor</th><th>Fonte</th><th class="num">Valor unitário</th><th>Considerada</th></tr>' + i.cotacoes.map(function (c) {
+        return '<tr><td>' + esc(c.fornecedor) + '</td><td>' + esc(c.fonte) + '</td><td class="num ' + (c.destoante ? 'destoante' : '') + '">' + brl(c.valorUnitario) +
+          (c.destoante ? ' ⚠' : '') + '</td><td>' + (c.considerado ? 'Sim' : 'Não') + '</td></tr>';
+      }).join('') + '</table>' +
+      '<table style="margin-top:6px"><tr><th>Nº</th><th class="num">Menor</th><th class="num">Média</th><th class="num">Mediana</th><th class="num">CV</th><th class="num">Unit. estimado</th><th class="num">Qtd</th><th class="num">Total</th></tr>' +
+      '<tr><td>' + i.n + '</td><td class="num">' + brl(i.menor) + '</td><td class="num">' + brl(i.media) + '</td><td class="num">' + brl(i.mediana) + '</td>' +
+      '<td class="num">' + (i.coefVariacao * 100).toFixed(1) + '%</td><td class="num"><b>' + brl(i.valorUnitarioEstimado) + '</b></td><td class="num">' + esc(i.quantidade) +
+      '</td><td class="num"><b>' + brl(i.valorTotalEstimado) + '</b></td></tr></table>';
+  });
+  return h + '<h2 style="margin-top:14px">Valor total estimado: ' + brl(m.total) + '</h2></div>';
+}
+
+function bInstrucao(w) {
+  var l = w.instrucao || [];
+  return '<div class="bloco" id="bloco-instr">' + cabBloco('tarefas', 'Instrução processual — documentos') + '<table><tr><th></th><th>Documento</th><th>Situação</th></tr>' +
+    l.map(function (i) {
+      var ico = !i.exigido ? '<span class="ajuda">—</span>' : i.ok ? '<span style="color:var(--verde)">' + ic('check', 16) + '</span>' : '<span style="color:var(--vermelho)">' + ic('x', 16) + '</span>';
+      var sit = !i.exigido ? 'Não aplicável (' + esc(i.condicao) + ')' : i.ok ? 'OK' : (i.qtd ? 'Existe, mas nenhum marcado como FINAL' : 'Faltando');
+      return '<tr><td>' + ico + '</td><td>' + esc(i.nome) + '</td><td>' + sit + '</td></tr>';
+    }).join('') + '</table><p class="ajuda">Anexe os documentos faltantes no bloco Documentos abaixo, escolhendo o tipo correspondente.</p></div>';
+}
+</script>

@@ -37,7 +37,17 @@ src/
   81_Setup.js              instalação (setup) e gatilhos
   90_Api.js                API única do front-end (permissões + lock)
   91_WebApp.js             doGet
-  Index.html, Estilos.html, App.html   interface (SPA em JS puro)
+  Index.html               estrutura da página (menu, barra superior) e inclusão dos scripts
+  Estilos.html             identidade visual (CSS)
+  Js_Base.html             estado, chamadas ao servidor, utilitários, ícones, avisos e pop-ups
+  Js_Rotas.html            endereços na URL e navegação
+  Js_Telas.html            painel, minhas tarefas, lista de processos, novo processo
+  Js_Processo.html         cabeçalho do processo, fases, linha do tempo, área de trabalho da etapa
+  Js_Blocos.html           blocos da etapa (formulário, documentos, cotações, mapa, instrução…)
+  Js_Abas.html             abas Documentos, Diligências, Dados e Histórico
+  Js_Admin.html            administração e atualizações da configuração
+  Js_Acoes.html            o que cada botão faz (cliques, alterações, teclado)
+  Js_Inicio.html           busca global e início do sistema (incluído por último)
 tests/                     testes locais com os serviços Google simulados
 ```
 
@@ -73,7 +83,7 @@ Pré-requisitos: Node.js e [clasp](https://github.com/google/clasp) (`npm i -g @
 7. *(Opcional)* Notificações por e-mail: crie as propriedades `NOTIFICAR_EMAIL = true` e `APP_URL = <url do Web App>` e execute `instalarGatilhos` para receber o resumo diário de prazos.
 8. Cadastre os usuários em **Administração** no próprio sistema, ou direto na aba `cfg_Usuarios`.
 
-**Instalação manual (sem clasp):** crie no editor um arquivo de script para cada `.js` de `src/` e um arquivo HTML para cada `.html`, usando **exatamente** os nomes `Index`, `Estilos` e `App`. Ative "Mostrar arquivo de manifesto appsscript.json" nas configurações do projeto e cole o conteúdo de `src/appsscript.json`. Depois siga a partir do passo 4.
+**Instalação manual (sem clasp):** crie no editor um arquivo de script para cada `.js` de `src/` e um arquivo HTML para cada `.html`, usando **exatamente** os nomes dos arquivos (`Index`, `Estilos`, `Js_Base`, `Js_Rotas`, `Js_Telas`, `Js_Processo`, `Js_Blocos`, `Js_Abas`, `Js_Admin`, `Js_Acoes`, `Js_Inicio`). Ative "Mostrar arquivo de manifesto appsscript.json" nas configurações do projeto e cole o conteúdo de `src/appsscript.json`. Depois siga a partir do passo 4.
 
 Papéis disponíveis: `ADMIN` (tudo), `GESTOR` (opera e suspende/cancela processos), `ANALISTA` (opera processos) e `CONSULTA` (somente leitura).
 

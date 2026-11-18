@@ -1,0 +1,51 @@
+<script>
+/* Js_Admin — Administração e atualizações da configuração. */
+// ------------------------------------------------------------------ ADMIN
+/** Aviso (somente ADMIN) quando há atualizações de configuração não aplicadas. */
+function avisoConfiguracao() {
+  var c = S.ctx.configuracao;
+  var el = $('#aviso-config');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'aviso-config';
+    $('.principal').insertBefore(el, $('#app'));
+  }
+  el.innerHTML = c && c.pendentes.length
+    ? '<div class="pend acoes" style="justify-content:space-between"><span>' + ic('alerta', 16) + ' Há <b>' + c.pendentes.length + '</b> atualização(ões) da configuração ' +
+      'ainda não aplicada(s) na planilha (versão ' + c.versao + ' de ' + c.ultima + '). Até aplicar, as telas mostram a configuração antiga.</span>' +
+      '<button class="btn" data-acao="atualizarConfiguracao">Aplicar atualizações agora</button></div>'
+    : '';
+}
+
+function cartaoAtualizacoes() {
+  var c = S.ctx.configuracao || { versao: '?', ultima: '?', pendentes: [] };
+  return '<div class="card"><h2>Atualizações da configuração</h2>' +
+    '<p>Versão aplicada na planilha: <b>' + esc(c.versao) + '</b> de <b>' + esc(c.ultima) + '</b>.</p>' +
+    (c.pendentes.length ? '<ul>' + c.pendentes.map(function (m) { return '<li>' + esc(m.versao) + ' — ' + esc(m.descricao) + '</li>'; }).join('') + '</ul>' +
+      '<button class="btn" data-acao="atualizarConfiguracao">Aplicar atualizações</button>' :
+      '<p class="ajuda">' + ic('check', 14) + ' Tudo atualizado. Você também pode clicar para conferir/recriar abas e colunas.</p>' +
+      '<button class="btn sec" data-acao="atualizarConfiguracao">Verificar estrutura</button>') +
+    '<pre id="log-config" class="log oculto"></pre></div>';
+}
+
+function vAdmin() {
+  return api('listarUsuarios').then(function (us) {
+    migalhas([['Administração']]);
+    app(cabPagina('Administração', 'Usuários, configuração do fluxo e atualizações.') + '<div class="grid g2"><div class="card"><h2>Usuários</h2><table><tr><th>E-mail</th><th>Nome</th><th>Setor</th><th>Papel</th><th>Ativo</th></tr>' +
+      us.map(function (u) {
+        return '<tr class="clicavel" data-acao="editarUsuario" data-email="' + esc(u.email) + '"><td>' + esc(u.email) + '</td><td>' + esc(u.nome) + '</td><td>' + esc(u.setor) +
+          '</td><td>' + esc(u.papel) + '</td><td>' + (u.ativo ? 'Sim' : 'Não') + '</td></tr>';
+      }).join('') + '</table>' +
+      '<h3 style="margin-top:16px">Incluir / alterar usuário</h3><div id="form-usu"><div class="linha"><div><label>E-mail</label><input name="email"></div><div><label>Nome</label><input name="nome"></div></div>' +
+      '<div class="linha"><div><label>Setor</label><input name="setor"></div><div><label>Papel</label><select name="papel">' +
+      ['ANALISTA', 'GESTOR', 'CONSULTA', 'ADMIN'].map(function (p) { return '<option>' + p + '</option>'; }).join('') + '</select></div>' +
+      '<div style="flex:0 0 80px"><label>Ativo</label><input type="checkbox" name="ativo" checked></div></div>' +
+      '<div class="acoes" style="margin-top:10px"><button class="btn" data-acao="salvarUsuario">Salvar usuário</button></div></div></div>' +
+      '<div class="card"><h2>Configuração do fluxo</h2><p>O fluxo (etapas, transições, campos, checklists, tipos de documento, pastas e modelos) é mantido nas abas <b>cfg_*</b> da planilha do banco de dados.</p>' +
+      '<p class="acoes"><a class="btn sec" target="_blank" href="' + esc(S.ctx.dbUrl) + '">Abrir planilha (banco de dados)</a>' +
+      '<a class="btn sec" target="_blank" href="' + esc(S.ctx.pastaRaizUrl) + '">Abrir pasta raiz</a></p>' +
+      '<p>Depois de editar a configuração, clique em:</p><button class="btn" data-acao="recarregarConfig">' + ic('atualizar', 15) + 'Recarregar configuração</button>' +
+      '<p class="ajuda">Versão ' + esc(S.ctx.versao) + '</p></div>' + cartaoAtualizacoes() + '</div>');
+  });
+}
+</script>

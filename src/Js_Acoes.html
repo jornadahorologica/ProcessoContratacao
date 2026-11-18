@@ -1,0 +1,258 @@
+<script>
+/* Js_Acoes — Ações: o que cada botão/campo faz (cliques, alterações, teclado). */
+// ------------------------------------------------------------------ AÇÕES (cliques)
+function recarregarProcesso(msg) {
+  return vProcesso().then(function () {
+    Rotas.atualizar(true);
+    if (msg) toast(msg);
+  });
+}
+
+var ACOES = {
+  ir: function (d) { if (d.view === 'processos') S.filtro = null; ir(d.view); },
+  abrirProcesso: function (d) { abrirProcesso(d.proc, null, d.aba); },
+  abrirTarefa: function (d) { abrirProcesso(d.proc, d.tarefa, 'fluxo'); },
+  aba: function (d) {
+    S.aba = d.aba;
+    $$('.abas a').forEach(function (a) { a.classList.toggle('ativo', a.dataset.aba === d.aba); });
+    Promise.resolve(renderAba()).then(function () { Rotas.atualizar(); });
+  },
+  selTarefa: function (d) { carregarTarefa(d.tarefa).then(function () { Rotas.atualizar(); }); },
+  filtrar: function () { S.filtro = { texto: $('#f-texto').value, status: (S.filtro || {}).status || '' }; ir('processos'); },
+
+  criarProcesso: function () {
+    var v = valoresForm($('#form-novo'));
+    ocupado(api('criarProcesso', v), 'Processo criado.').then(function (p) {
+      abrirProcesso(p.id);
+    });
+  },
+  statusProcesso: function (d) {
+    var cfg = {
+      SUSPENSO: { titulo: 'Suspender o processo?', ok: 'Suspender', classe: '', tipo: 'aviso', icone: 'relogio' },
+      CANCELADO: { titulo: 'Cancelar o processo?', ok: 'Cancelar processo', classe: 'perigo cheio', tipo: 'perigo', icone: 'alerta',
+        texto: 'As etapas em andamento serão encerradas. Essa ação não pode ser desfeita.' },
+      EM_ANDAMENTO: { titulo: 'Retomar o processo?', ok: 'Retomar', classe: 'verde', tipo: 'sucesso', icone: 'atualizar' }
+    }[d.status];
+    Dialogo.abrir({ tipo: cfg.tipo, icone: cfg.icone, titulo: cfg.titulo, texto: cfg.texto || 'O motivo ficará registrado no histórico do processo.',
+      campo: { tipo: 'textarea', rotulo: 'Motivo', obrigatorio: true }, ok: cfg.ok, classeOk: cfg.classe, cancelar: 'Voltar' })
+      .then(function (motivo) { if (motivo) acaoTela('alterarStatusProcesso', [S.procId, d.status, motivo], 'Status do processo alterado.'); });
+  },
+  salvarProcesso: function () {
+    acaoTela('atualizarProcesso', [S.procId, valoresForm($('#form-dados'))], 'Dados salvos.');
+  },
+
+  salvarCampos: function (d) {
+    var v = valoresForm($(d.raiz));
+    acaoTela('salvarCampos', [S.tarefaId, v], 'Dados salvos.');
+  },
+  checklist: function (d, el) {
+    acaoTela('marcarChecklist', [S.tarefaId, d.item, el.checked]);
+  },
+  registrarEnvio: function () {
+    acaoTela('registrarEnvio', [S.tarefaId, $('#env-ref').value, $('#env-data').value], 'Envio registrado.');
+  },
+  registrarRetorno: function () {
+    acaoTela('registrarRetorno', [S.tarefaId, $('#ret-ref').value, $('#ret-data').value], 'Retorno registrado.');
+  },
+  concluir: function () {
+    var nome = S.tar.etapa.nome;
+    var prox = (S.tar.proximas || []).filter(function (x) { return !x.automatica; });
+    var auto = (S.tar.proximas || []).filter(function (x) { return x.automatica; });
+    var detalhe = prox.length
+      ? ic('seta', 16) + '<span>' + (prox.length > 1 ? 'Próximas etapas (em paralelo):' : 'Próxima etapa:') + ' <b>' + prox.map(function (x) { return esc(x.nome); }).join(', ') + '</b></span>'
+      : auto.length ? ic('seta', 16) + '<span>' + esc(auto[0].nome) + '</span>' : '';
+    Dialogo.abrir({ tipo: 'sucesso', icone: 'check', titulo: 'Concluir “' + nome + '”?',
+      texto: 'Os dados e documentos desta etapa ficarão registrados no histórico e o processo avançará no fluxo.',
+      detalhe: detalhe, ok: 'Concluir e avançar', classeOk: 'verde', iconeOk: 'check' })
+      .then(function (ok) {
+        if (!ok) return;
+        acaoTela('concluirTarefa', [S.tarefaId, $('#obs-concluir').value], null, { auto: true }).then(function () {
+          var atual = S.tar && S.tar.ativa ? S.tar.etapa.nome : '';
+          toast(atual ? 'Agora em: ' + atual : 'O processo seguiu no fluxo.', false, '“' + nome + '” concluída');
+        });
+      });
+  },
+  devolver: function () {
+    var destino = $('#dev-destino').value, motivo = $('#dev-motivo').value;
+    if (!motivo) return toast('Informe o motivo da devolução.', true);
+    var nomeDestino = $('#dev-destino').selectedOptions[0].textContent;
+    Dialogo.abrir({ tipo: 'aviso', icone: 'voltar', titulo: 'Devolver para “' + nomeDestino + '”?',
+      texto: 'A etapa atual será encerrada como devolvida e o processo voltará para a etapa escolhida.',
+      detalhe: ic('editar', 16) + '<span>Motivo: <b>' + esc(motivo) + '</b></span>', ok: 'Devolver', classeOk: 'perigo cheio', iconeOk: 'voltar' })
+      .then(function (ok) { if (ok) acaoTela('devolverTarefa', [S.tarefaId, destino, motivo], 'Processo devolvido para “' + nomeDestino + '”.', { auto: true }); });
+  },
+
+  gerarDoc: function (d) {
+    acaoTela('gerarDocumento', [S.procId, d.tipo, S.tarefaId], 'Documento gerado. Abra-o para editar.').then(function (doc) {
+      window.open(doc.url, '_blank');
+    });
+  },
+  anexar: function (d) {
+    var p = d.prefixo;
+    var noFluxo = p === 'wt';
+    lerArquivo($('#' + p + '-arq')).then(function (arq) {
+      return acaoTela('anexarDocumento', [S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', arq], 'Documento anexado.');
+    }).catch(function (e) { toast(e.message, true); });
+  },
+  vincular: function (d) {
+    var p = d.prefixo;
+    var noFluxo = p === 'wt';
+    var link = $('#' + p + '-link').value;
+    if (!link) return toast('Informe o link do arquivo.', true);
+    var tipoDoc = $('#' + p + '-tipo').value;
+    Dialogo.abrir({ icone: 'link', titulo: 'Vincular arquivo do Drive', texto: 'Deseja mover o arquivo para a pasta deste processo ou apenas registrar o link?',
+      botoes: [{ rotulo: 'Cancelar', valor: null, classe: 'sec' }, { rotulo: 'Apenas vincular', valor: 'vincular', classe: 'sec' },
+        { rotulo: 'Mover para a pasta', valor: 'mover', icone: 'pasta' }] })
+      .then(function (op) {
+        if (op) acaoTela('vincularDocumento', [S.procId, tipoDoc, noFluxo ? S.tarefaId : '', link, op === 'mover'], 'Documento vinculado.');
+      });
+  },
+  enviarAssinatura: function (d) {
+    Dialogo.abrir({ icone: 'assinar', titulo: 'Enviar para assinatura no SUITE',
+      texto: 'O sistema vai gerar o PDF do documento. Junte-o ao processo no SUITE e, a cada assinatura feita lá, registre aqui.',
+      ok: 'Gerar PDF', iconeOk: 'doc' })
+      .then(function (ok) { if (ok) acaoTela('enviarParaAssinatura', [d.doc], 'PDF gerado. Junte-o ao SUITE para assinatura.'); });
+  },
+  registrarAssinatura: function (d) {
+    Dialogo.abrir({ tipo: 'sucesso', icone: 'assinar', titulo: 'Registrar assinatura', texto: 'Informe a data em que o documento foi assinado no SUITE.',
+      campo: { tipo: 'date', rotulo: 'Data da assinatura', valor: hojeISO(), obrigatorio: true }, ok: 'Registrar', classeOk: 'verde', iconeOk: 'check' })
+      .then(function (data) { if (data) acaoTela('registrarAssinatura', [d.id, data], 'Assinatura registrada.'); });
+  },
+  usarSugestao: function (d) {
+    var s = S.tar.sugestoes[d.campo];
+    var el = $('#bloco-form [name="' + d.campo + '"]');
+    if (!s || !el) return;
+    el.value = s.valor;
+    el.focus();
+    toast('Sugestão aplicada. Revise e clique em "Salvar dados".');
+  },
+  expandirSecoes: function () {
+    var secoes = $$('#bloco-form details.secao');
+    var abrir = secoes.some(function (x) { return !x.open; });
+    secoes.forEach(function (x) { x.open = abrir; });
+  },
+  statusDoc: function (d) {
+    acaoTela('alterarStatusDocumento', [d.doc, d.status], 'Status do documento alterado.');
+  },
+
+  salvarCotacao: function () {
+    acaoTela('salvarCotacao', [S.procId, valoresForm($('#form-cot'))], 'Cotação registrada.');
+  },
+  removerCotacao: function (d) {
+    Dialogo.abrir({ tipo: 'perigo', icone: 'lixo', titulo: 'Excluir esta cotação?', texto: 'A exclusão fica registrada no histórico.',
+      ok: 'Excluir', classeOk: 'perigo cheio' })
+      .then(function (ok) { if (ok) acaoTela('removerCotacao', [d.id], 'Cotação excluída.'); });
+  },
+  toggleCotacao: function (d, el) {
+    var c = S.tar.cotacoes.filter(function (x) { return x.id === d.id; })[0];
+    c.considerado = el.checked;
+    acaoTela('salvarCotacao', [S.procId, c]);
+  },
+  gerarMapa: function () {
+    acaoTela('gerarMapa', [S.procId, $('#mapa-metodo').value, S.tarefaId], 'Mapa comparativo gerado.').then(function (doc) {
+      window.open(doc.url, '_blank');
+    });
+  },
+
+  registrarDiligencia: function () {
+    acaoTela('registrarDiligencia', [S.procId, valoresForm($('#form-dil'))], 'Diligência registrada.');
+  },
+  responderDiligencia: function (d) {
+    var resposta = $('#resp-' + d.id).value;
+    var input = $('#resparq-' + d.id);
+    var envio = input.files && input.files[0]
+      ? lerArquivo(input).then(function (arq) { return api('anexarDocumento', S.procId, 'RESPOSTA_DESPACHO', '', arq); }).then(function (doc) { return doc.id; })
+      : Promise.resolve('');
+    envio.then(function (docId) { return acaoTela('responderDiligencia', [d.id, resposta, docId], 'Resposta registrada.'); })
+      .catch(function (e) { toast(e.message, true); });
+  },
+
+  editarUsuario: function (d) {
+    api('listarUsuarios').then(function (us) {
+      var u = us.filter(function (x) { return x.email === d.email; })[0];
+      var f = $('#form-usu');
+      ['email', 'nome', 'setor', 'papel'].forEach(function (k) { $('[name=' + k + ']', f).value = u[k] || ''; });
+      $('[name=ativo]', f).checked = !!u.ativo;
+    });
+  },
+  salvarUsuario: function () {
+    ocupado(api('salvarUsuario', valoresForm($('#form-usu'))), 'Usuário salvo.').then(function () {
+      return api('contexto').then(function (c) { S.ctx = c; ir('admin'); });
+    });
+  },
+  atualizarConfiguracao: function () {
+    Dialogo.abrir({ icone: 'atualizar', titulo: 'Aplicar atualizações da configuração?', texto: 'Nenhum processo ou dado é apagado.', ok: 'Aplicar' })
+      .then(function (ok) { if (ok) ACOES.aplicarAtualizacoes(); });
+  },
+  irPendencia: function (d) {
+    var alvo = alvoPendencia(S.tar.pendencias[Number(d.i)]);
+    var bloco = alvo && $('#' + alvo.bloco);
+    if (!bloco) return;
+    bloco.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    bloco.classList.add('destacado');
+    setTimeout(function () { bloco.classList.remove('destacado'); }, 1800);
+    if (alvo.rotulo) {
+      var rot = $$('label, summary', bloco).filter(function (l) { return l.textContent.indexOf(alvo.rotulo) >= 0; })[0];
+      if (!rot) return;
+      var sec = rot.closest('details');
+      if (sec) sec.open = true;
+      var entrada = (sec || rot.parentNode).querySelector('textarea, input:not([type=checkbox]), select');
+      if (entrada) {
+        setTimeout(function () { entrada.focus({ preventScroll: true }); }, 350);
+        entrada.classList.add('campo-destacado');
+        setTimeout(function () { entrada.classList.remove('campo-destacado'); }, 2200);
+      }
+    }
+  },
+  filtroStatus: function (d) {
+    S.filtro = { texto: ($('#f-texto') || {}).value || '', status: d.status };
+    ir('processos');
+  },
+  aplicarAtualizacoes: function () {
+    ocupado(api('atualizarConfiguracao'), 'Configuração atualizada.').then(function (log) {
+      return api('contexto').then(function (c) {
+        S.ctx = c;
+        avisoConfiguracao();
+        return ir(S.view === 'admin' ? 'admin' : S.view).then(function () {
+          var el = $('#log-config');
+          if (el) { el.textContent = log.join('\n'); el.classList.remove('oculto'); }
+        });
+      });
+    });
+  },
+  recarregarConfig: function () {
+    ocupado(api('recarregarConfig'), 'Configuração recarregada.').then(function () {
+      return api('contexto').then(function (c) { S.ctx = c; });
+    });
+  }
+};
+
+var MUDANCAS = {
+  nsa: function (el) {
+    var area = el.closest('.secao-corpo').querySelector('textarea');
+    area.placeholder = el.checked ? 'Justificativa do “Não se aplica”' : 'Texto da seção';
+    if (el.checked) area.focus();
+  },
+  atribuir: function (el) {
+    ocupado(api('atribuirTarefa', S.tarefaId, el.value), 'Analista responsável alterado.');
+  },
+  metodoMapa: function (el) {
+    api('calcularMapa', S.procId, el.value).then(function (m) { S.tar.mapa = m; renderTrabalho(); });
+  }
+};
+
+document.addEventListener('click', function (ev) {
+  var el = ev.target.closest('[data-acao]');
+  if (!el) return;
+  if (el.type !== 'checkbox' && el.type !== 'radio') ev.preventDefault();
+  var fn = ACOES[el.dataset.acao];
+  if (fn) fn(el.dataset, el);
+});
+document.addEventListener('keydown', function (ev) {
+  if (ev.target.dataset && ev.target.dataset.inteiro && /^[.,eE+\-]$/.test(ev.key)) ev.preventDefault();
+});
+document.addEventListener('change', function (ev) {
+  var el = ev.target.closest('[data-change]');
+  if (el && MUDANCAS[el.dataset.change]) MUDANCAS[el.dataset.change](el);
+});
+</script>

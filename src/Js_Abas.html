@@ -1,0 +1,63 @@
+<script>
+/* Js_Abas — Abas do processo: documentos, diligências, dados e histórico. */
+// ---------- aba Documentos
+function abaDocumentos(alvo) {
+  var ed = podeEditar() && S.det.processo.status === 'EM_ANDAMENTO';
+  alvo.innerHTML = '<div class="card"><h2>Documentos do processo</h2>' + tabelaDocs(S.det.documentos, ed, S.det.assinaturas) +
+    (ed ? '<h3 style="margin-top:16px">Anexar documento</h3>' + formAnexo('dp', 'OUTRO') : '') + '</div>';
+}
+
+// ---------- aba Diligências
+function abaDiligencias(alvo) {
+  var ed = podeEditar();
+  var l = S.det.diligencias;
+  alvo.innerHTML = '<div class="card"><h2>Diligências / despachos</h2>' + (l.length ? l.map(function (d) {
+    return '<div class="bloco"><h3><span>' + esc(d.numeroDespacho) + (d.origem ? ' — ' + esc(d.origem) : '') + '</span>' +
+      tag(d.status === 'ABERTA' ? 'AGUARDANDO_RETORNO' : 'RESPONDIDA', d.status === 'ABERTA' ? 'Aberta' : 'Respondida') + '</h3>' +
+      '<div class="meta">Recebido em ' + dataBR(d.recebidoEm) + ' · Prazo: ' + dataBR(d.prazo) + (d.respondidoEm ? ' · Respondido em ' + dataBR(d.respondidoEm) : '') + '</div>' +
+      (d.assunto ? '<p>' + esc(d.assunto) + '</p>' : '') + (d.resposta ? '<p><b>Resposta:</b> ' + esc(d.resposta) + '</p>' : '') +
+      (ed && d.status === 'ABERTA' ? '<div class="linha"><div><label>Resumo da resposta</label><input id="resp-' + esc(d.id) + '"></div>' +
+        '<div><label>Documento de resposta (opcional)</label><input type="file" id="resparq-' + esc(d.id) + '"></div>' +
+        '<div style="flex:0 0 auto;align-self:end"><button class="btn" data-acao="responderDiligencia" data-id="' + esc(d.id) + '">Registrar resposta</button></div></div>' : '') + '</div>';
+  }).join('') : '<div class="vazio">Nenhuma diligência registrada.</div>') +
+  (ed ? '<h3 style="margin-top:16px">Registrar nova diligência</h3><div id="form-dil"><div class="linha">' +
+    '<div><label>Nº do despacho <span class="obrig">*</span></label><input name="numeroDespacho" placeholder="DESPACHO Nº 458/2026/CECOC"></div>' +
+    '<div><label>Origem</label><input name="origem" placeholder="CECOC"></div></div>' +
+    '<label>Assunto</label><textarea name="assunto"></textarea><div class="linha">' +
+    '<div><label>Recebido em</label><input type="date" name="recebidoEm" value="' + hojeISO() + '"></div><div><label>Prazo</label><input type="date" name="prazo"></div></div>' +
+    '<div class="acoes" style="margin-top:10px"><button class="btn" data-acao="registrarDiligencia">Registrar diligência</button></div></div>' : '') + '</div>';
+}
+
+// ---------- aba Dados
+function abaDados(alvo) {
+  var p = S.det.processo;
+  var ed = podeEditar();
+  var dis = ed ? '' : ' disabled';
+  var vars = S.det.variaveis;
+  var chaves = Object.keys(vars).filter(function (k) { return k.indexOf('checklist.') !== 0; }).sort();
+  alvo.innerHTML = '<div class="grid g2"><div class="card" id="form-dados"><h2>Dados do processo</h2>' +
+    '<label>Título</label><input name="titulo" value="' + esc(p.titulo) + '"' + dis + '>' +
+    '<label>Objeto</label><textarea name="objeto"' + dis + '>' + esc(p.objeto) + '</textarea>' +
+    '<div class="linha"><div><label>Nº SUITE</label><input name="numeroSuite" value="' + esc(p.numeroSuite) + '"' + dis + '></div>' +
+    '<div><label>Setor demandante</label><input name="setorDemandante" value="' + esc(p.setorDemandante) + '"' + dis + '></div></div>' +
+    '<div class="linha"><div><label>Analista responsável</label><select name="responsavelEmail"' + dis + '>' + opcoesUsuarios(p.responsavelEmail) + '</select></div>' +
+    '<div><label>Responsável técnico</label><input name="responsavelTecnico" list="lista-resp-tecnico" value="' + esc(p.responsavelTecnico) + '"' + dis + '></div></div>' +
+    datalistUsuarios() +
+    '<p class="ajuda">Criado em ' + dataBR(p.criadoEm) + ' por ' + esc(nomeUsuario(p.criadoPor)) + '</p>' +
+    (ed ? '<button class="btn" data-acao="salvarProcesso">Salvar</button>' : '') + '</div>' +
+    '<div class="card"><h2>Informações registradas nas etapas</h2>' + (chaves.length ? '<table><tr><th>Campo</th><th>Valor</th></tr>' +
+      chaves.map(function (k) { return '<tr><td>' + esc(k) + '</td><td>' + esc(vars[k]) + '</td></tr>'; }).join('') + '</table>' : '<div class="vazio">Nenhuma.</div>') +
+    '</div></div>';
+}
+
+// ---------- aba Histórico
+function abaHistorico(alvo) {
+  alvo.innerHTML = '<div class="card carregando">Carregando histórico…</div>';
+  return api('historicoProcesso', S.procId).then(function (lista) {
+    alvo.innerHTML = '<div class="card"><h2>Histórico (auditoria)</h2><table><tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Detalhe</th></tr>' +
+      lista.map(function (h) {
+        return '<tr><td>' + dataBR(h.dataHora) + '</td><td>' + esc(nomeUsuario(h.usuario)) + '</td><td>' + esc(h.acao) + '</td><td>' + esc(h.detalhe) + '</td></tr>';
+      }).join('') + '</table>' + (lista.length >= 300 ? '<p class="ajuda">Mostrando os 300 registros mais recentes.</p>' : '') + '</div>';
+  });
+}
+</script>

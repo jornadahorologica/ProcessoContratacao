@@ -1,0 +1,106 @@
+<script>
+/* Js_Rotas — Rotas (endereço na URL) e navegação entre telas. */
+// ------------------------------------------------------------------ rotas (URL)
+/*
+ * A URL do Web App reflete a tela atual no fragmento (#). O Apps Script não
+ * permite alterar o caminho da URL depois que a página carrega.
+ *   …/exec#/painel
+ *   …/exec#/processos
+ *   …/exec#/novo-processo
+ *   …/exec#/processo/CESOP-2026-001                (aba Fluxo, etapa atual)
+ *   …/exec#/processo/CESOP-2026-001/etapa/DFD      (etapa específica)
+ *   …/exec#/processo/CESOP-2026-001/documentos     (também diligencias, dados, historico)
+ *   …/exec#/admin
+ * Os links podem ser copiados/compartilhados e os botões Voltar/Avançar funcionam.
+ */
+var ABAS = ['fluxo', 'documentos', 'diligencias', 'dados', 'historico'];
+var Rotas = {
+  _atual: null,
+  _historico: function () { return window.google && google.script && google.script.history; },
+
+  /** Monta o fragmento a partir do estado atual. */
+  montar: function () {
+    switch (S.view) {
+      case 'processos': return '/processos';
+      case 'tarefas': return '/minhas-tarefas';
+      case 'novo': return '/novo-processo';
+      case 'admin': return '/admin';
+      case 'processo': {
+        var num = S.det && S.det.processo && S.det.processo.id === S.procId ? S.det.processo.numero : S.procId;
+        var base = '/processo/' + encodeURIComponent(num);
+        if (S.aba && S.aba !== 'fluxo') return base + '/' + S.aba;
+        var cod = S.tar && S.tar.tarefa && S.tar.tarefa.id === S.tarefaId ? S.tar.tarefa.etapaCodigo : '';
+        return base + (cod ? '/etapa/' + encodeURIComponent(cod) : '');
+      }
+      default: return '/painel';
+    }
+  },
+
+  /** Interpreta um fragmento. Retorna {view, params} ou null se inválido. */
+  ler: function (hash) {
+    var partes = String(hash || '').replace(/^#/, '').split('/').filter(String).map(decodeURIComponent);
+    var simples = { '': 'painel', painel: 'painel', processos: 'processos', 'minhas-tarefas': 'tarefas', 'novo-processo': 'novo', admin: 'admin' };
+    if (partes.length <= 1 && simples.hasOwnProperty(partes[0] || '')) return { view: simples[partes[0] || ''], params: {} };
+    if (partes[0] === 'processo' && partes[1]) {
+      var p = { procId: partes[1], tarefaId: null, etapaRota: null, aba: 'fluxo' };
+      if (partes[2] === 'etapa' && partes[3]) p.etapaRota = partes[3];
+      else if (partes[2] && ABAS.indexOf(partes[2]) >= 0) p.aba = partes[2];
+      return { view: 'processo', params: p };
+    }
+    return null;
+  },
+
+  /** Atualiza a URL se a tela mudou (substituir = não cria entrada no histórico). */
+  atualizar: function (substituir) {
+    var h = this.montar();
+    if (h === this._atual) return;
+    var primeira = this._atual === null;
+    this._atual = h;
+    var hist = this._historico();
+    if (hist) hist[substituir || primeira ? 'replace' : 'push'](null, {}, h);
+    else if (substituir || primeira) history.replaceState(null, '', '#' + h);
+    else location.hash = h;
+  },
+
+  /** Abre a tela correspondente a um fragmento (carga inicial, Voltar/Avançar). */
+  aplicar: function (hash) {
+    var r = this.ler(hash);
+    if (!r) { toast('Endereço não encontrado. Abrindo o painel.', true); r = { view: 'painel', params: {} }; }
+    this._atual = String(hash || '').replace(/^#/, '') || null;
+    return ir(r.view, r.params);
+  },
+
+  iniciar: function () {
+    var self = this;
+    var hist = this._historico();
+    if (hist) {
+      hist.setChangeHandler(function (e) { self.aplicar(e.location && e.location.hash); });
+      google.script.url.getLocation(function (loc) { self.aplicar(loc.hash); });
+    } else {
+      window.addEventListener('popstate', function () { self.aplicar(location.hash); });
+      self.aplicar(location.hash);
+    }
+  }
+};
+
+// ------------------------------------------------------------------ navegação
+function ir(view, params) {
+  S.view = view;
+  S.autoSelecionada = false;
+  if (view !== 'processo') { S.det = null; S.tar = null; }
+  if (params) for (var k in params) S[k] = params[k];
+  $$('#menu a').forEach(function (a) { a.classList.toggle('ativo', a.dataset.view === view); });
+  app('<div class="carregando">Carregando…</div>');
+  $$('#menu a').forEach(function (a) { a.classList.toggle('ativo', a.dataset.view === (view === 'processo' ? 'processos' : view)); });
+  var r = { painel: vPainel, processos: vProcessos, tarefas: vTarefas, novo: vNovo, processo: vProcesso, admin: vAdmin }[view];
+  return Promise.resolve(r()).then(function () {
+    // Etapa escolhida automaticamente (etapa atual): substitui em vez de criar outra entrada no histórico
+    Rotas.atualizar(view === 'processo' && S.autoSelecionada);
+  }).catch(function (e) {
+    app('<div class="card"><b>Erro:</b> ' + esc(e.message) + '</div>');
+  });
+}
+function abrirProcesso(id, tarefaId, aba) {
+  return ir('processo', { procId: id, tarefaId: tarefaId || null, etapaRota: null, aba: aba || 'fluxo' });
+}
+</script>

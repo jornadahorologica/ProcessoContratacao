@@ -1,0 +1,177 @@
+<script>
+/* Js_Processo — Processo: cabeçalho, barra de fases, linha do tempo e área de trabalho da etapa. */
+// ------------------------------------------------------------------ DETALHE DO PROCESSO
+function vProcesso() {
+  return api('telaProcesso', S.procId, { tarefaId: S.tarefaId, etapa: S.etapaRota, aba: S.aba }).then(aplicarTela);
+}
+
+/** Aplica a tela recebida do servidor (detalhe + etapa selecionada) sem nova chamada. */
+function aplicarTela(tela) {
+  S.det = tela.detalhe;
+  S.procId = tela.detalhe.processo.id; // a URL pode trazer o número; daqui em diante usa o id interno
+  S.tarefaId = tela.tarefaId;
+  S.tar = tela.tarefa;
+  S.autoSelecionada = tela.auto;
+  if (tela.etapaNaoIniciada) toast('A etapa "' + tela.etapaNaoIniciada + '" ainda não foi iniciada neste processo.', true);
+  S.etapaRota = null;
+  renderProcesso();
+  return renderAba();
+}
+
+function renderProcesso() {
+  var det = S.det;
+  var p = det.processo;
+  migalhas([['Processos', '#/processos', 'processos'], [p.numero]]);
+  var gestao = ehGestor() ? (
+    p.status === 'EM_ANDAMENTO' ? '<button class="btn sec" data-acao="statusProcesso" data-status="SUSPENSO">Suspender</button>' +
+      '<button class="btn perigo" data-acao="statusProcesso" data-status="CANCELADO">Cancelar</button>' :
+    p.status === 'SUSPENSO' ? '<button class="btn" data-acao="statusProcesso" data-status="EM_ANDAMENTO">Retomar</button>' +
+      '<button class="btn perigo" data-acao="statusProcesso" data-status="CANCELADO">Cancelar</button>' : '') : '';
+  var meta = function (icone, rotulo, valor) {
+    return '<div class="meta"><div class="ib">' + ic(icone, 16) + '</div><div style="min-width:0"><small>' + rotulo + '</small><b title="' + esc(valor) + '">' + esc(valor) + '</b></div></div>';
+  };
+  var dias = p.criadoEm ? diasEntre(p.criadoEm.slice(0, 10), hojeISO()) : 0;
+
+  // Barra de fases: progresso de cada fase pelas etapas concluídas
+  var fases = S.ctx.fases.filter(function (f) { return f.codigo !== 'CONCLUIDO'; });
+  var idxAtual = fases.map(function (f) { return f.codigo; }).indexOf(p.fase);
+  if (p.status === 'CONCLUIDO') idxAtual = fases.length;
+  var barra = fases.map(function (f, i) {
+    var et = det.linhaDoTempo.filter(function (e) { return e.fase === f.codigo; });
+    var feitas = et.filter(function (e) { return e.status === 'CONCLUIDA'; }).length;
+    var pct = i < idxAtual ? 100 : (et.length ? Math.round(100 * feitas / et.length) : 0);
+    var cls = i === idxAtual ? 'atual' : i > idxAtual ? 'futura' : '';
+    return '<div class="fase-b ' + cls + '" title="' + feitas + ' de ' + et.length + ' etapas concluídas"><div class="barra"><span style="width:' + pct + '%"></span></div>' +
+      '<small>Fase ' + (i + 1) + (i === idxAtual ? ' · atual' : '') + '</small><b>' + esc(f.nome) + '</b></div>';
+  }).join('');
+
+  var abas = [['fluxo', 'Fluxo e etapas', 'lista'], ['documentos', 'Documentos', 'doc', det.documentos.length],
+    ['diligencias', 'Diligências', 'balanca', det.diligencias.length], ['dados', 'Dados', 'editar'], ['historico', 'Histórico', 'atividade']];
+  app('<div class="card proc"><div style="flex:1;min-width:0">' +
+      '<span class="num-proc">' + ic('hash', 13) + esc(p.numero) + (p.numeroSuite ? ' · SUITE ' + esc(p.numeroSuite) : '') + '</span>' +
+      '<h1>' + esc(p.titulo) + '</h1>' +
+      '<div class="objeto">' + tag(p.status) + '<span>' + esc(p.objeto) + '</span></div>' +
+      '<div class="metas">' + meta('usuario', 'Analista responsável', nomeUsuario(p.responsavelEmail)) +
+      meta('escudo', 'Responsável técnico', p.responsavelTecnico || '—') +
+      meta('dinheiro', 'Valor estimado', p.valorEstimado !== null && p.valorEstimado !== undefined && p.valorEstimado !== '' ? brl(p.valorEstimado) : 'A definir') +
+      meta('calendario', 'Aberto há', dias + (dias === 1 ? ' dia' : ' dias')) + '</div></div>' +
+      '<div class="acoes"><a class="btn sec" href="' + esc(p.pastaUrl) + '" target="_blank">' + ic('pasta', 16) + 'Drive</a>' + gestao + '</div></div>' +
+    '<div class="card fases">' + barra + '</div>' +
+    '<div class="abas">' + abas.map(function (a) {
+      return '<a href="#" data-acao="aba" data-aba="' + a[0] + '" class="' + (S.aba === a[0] ? 'ativo' : '') + '">' + ic(a[2], 15) + a[1] +
+        (a[3] !== undefined ? '<span class="qtd">' + a[3] + '</span>' : '') + '</a>';
+    }).join('') + '</div><div id="conteudo-aba"></div>');
+}
+
+function renderAba() {
+  var alvo = $('#conteudo-aba');
+  var r = { fluxo: abaFluxo, documentos: abaDocumentos, diligencias: abaDiligencias, dados: abaDados, historico: abaHistorico }[S.aba];
+  return Promise.resolve(r(alvo));
+}
+
+// ---------- aba Fluxo: linha do tempo + área de trabalho da etapa
+function abaFluxo(alvo) {
+  var det = S.det;
+  var porFase = [];
+  det.linhaDoTempo.forEach(function (e) {
+    var g = porFase[porFase.length - 1];
+    if (!g || g.fase !== e.fase) porFase.push(g = { fase: e.fase, itens: [] });
+    g.itens.push(e);
+  });
+  var n = 0;
+  var sub = function (e) {
+    if (e.status === 'CONCLUIDA') return 'Concluída' + (e.concluidaEm ? ' em ' + dataBR(e.concluidaEm.slice(0, 10)) : '');
+    if (e.status === 'ABERTA') return 'Em andamento' + (e.prazo ? ' · prazo ' + dataBR(e.prazo) : '');
+    if (e.status === 'AGUARDANDO_RETORNO') return 'Aguardando retorno';
+    if (e.status === 'NAO_INICIADA') return 'Não iniciada';
+    return ROTULOS[e.status] || e.status;
+  };
+  var tl = porFase.map(function (g) {
+    return '<div class="fase">' + esc(nomeFase(g.fase)) + '</div>' + g.itens.map(function (e, i) {
+      n++;
+      var clic = e.tarefaId ? ' data-acao="selTarefa" data-tarefa="' + esc(e.tarefaId) + '"' : '';
+      return '<div class="item ' + esc(e.status) + (e.tarefaId ? '' : ' inativo') + (e.tarefaId && e.tarefaId === S.tarefaId ? ' sel' : '') +
+        (i === g.itens.length - 1 ? ' ultimo' : '') + '"' + clic + '>' +
+        '<span class="bola">' + (e.status === 'CONCLUIDA' ? ic('check', 14) : n) + '</span>' +
+        '<span class="txt"><b>' + esc(e.nome) + (e.instancias > 1 ? ' <span class="ajuda">(' + e.instancias + 'x)</span>' : '') + '</b><small>' + sub(e) + '</small></span></div>';
+    }).join('');
+  }).join('');
+  alvo.innerHTML = '<div class="fluxo"><div class="card timeline"><h2>Etapas</h2>' + tl + '</div>' +
+    '<div id="area-trabalho">' + (S.tarefaId ? '<div class="carregando">Carregando etapa…</div>' : '<div class="card vazio">Selecione uma etapa.</div>') + '</div></div>';
+  if (!S.tarefaId) return;
+  if (S.tar && S.tar.tarefa && S.tar.tarefa.id === S.tarefaId) return renderTrabalho(); // já veio na resposta
+  return carregarTarefa(S.tarefaId);
+}
+
+function carregarTarefa(id) {
+  S.tarefaId = id;
+  $$('.timeline .item').forEach(function (el) { el.classList.toggle('sel', el.dataset.tarefa === id); });
+  return api('abrirTarefa', id).then(function (w) { S.tar = w; renderTrabalho(); })
+    .catch(function (e) { $('#area-trabalho').innerHTML = '<div class="card">Erro: ' + esc(e.message) + '</div>'; });
+}
+
+/** Para onde leva cada pendência (bloco da tela e, se houver, o campo). */
+function alvoPendencia(txt) {
+  var m = txt.match(/(?:seção|campo) "(.+?)"/) || txt.match(/"Não se aplica" em: (.+)$/);
+  if (m) return { bloco: 'bloco-form', rotulo: m[1], acao: 'Preencher' };
+  if (/decisão/i.test(txt)) return { bloco: 'bloco-decisao', acao: 'Decidir' };
+  if (/checklist/i.test(txt)) return { bloco: 'bloco-check', acao: 'Marcar' };
+  if (/instrução/i.test(txt)) return { bloco: 'bloco-instr', acao: 'Ver' };
+  if (/envio e o retorno/i.test(txt)) return { bloco: 'bloco-solic', acao: 'Registrar' };
+  if (/cotação/i.test(txt)) return { bloco: 'bloco-cot', acao: 'Registrar' };
+  if (/documento|assinad/i.test(txt)) return { bloco: 'bloco-docs', acao: 'Documentos' };
+  return null;
+}
+
+function renderTrabalho() {
+  var w = S.tar, t = w.tarefa, e = w.etapa;
+  var ed = w.ativa && podeEditar();
+  var concluida = t.status === 'CONCLUIDA';
+  var icone = e.tipo === 'DECISAO' ? 'decisao' : w.blocos.indexOf('D') >= 0 ? 'enviar' : w.blocos.indexOf('E') >= 0 || w.blocos.indexOf('M') >= 0 ? 'grafico' :
+    w.blocos.indexOf('I') >= 0 ? 'tarefas' : 'doc';
+  var chips = [tag(t.status)];
+  if (t.prazo && w.ativa) {
+    var d = diasEntre(hojeISO(), t.prazo);
+    chips.push('<span class="chip ' + (d < 0 ? 'vermelho' : d <= 2 ? 'ambar' : '') + '">' + ic('relogio', 13) +
+      (d < 0 ? 'Atrasada há ' + (-d) + ' dia(s)' : d === 0 ? 'Vence hoje' : 'Prazo em ' + d + ' dia(s) · ' + dataBR(t.prazo)) + '</span>');
+  }
+  if (t.setor) chips.push('<span class="chip">' + ic('usuario', 13) + esc(t.setor) + '</span>');
+  if (t.concluidaEm) chips.push('<span class="chip verde">' + ic('check', 13) + 'Encerrada em ' + dataBR(t.concluidaEm) + ' por ' + esc(nomeUsuario(t.concluidaPor)) + '</span>');
+
+  var cab = '<div class="card"><div class="topo-etapa' + (concluida ? ' concluida' : '') + '"><div class="ib">' + ic(concluida ? 'check' : icone, 22) + '</div>' +
+    '<div style="flex:1;min-width:0"><h2>' + esc(e.nome) + '</h2>' + (e.descricao ? '<p>' + esc(e.descricao) + '</p>' : '') +
+    '<div class="chips">' + chips.join('') + '</div>' +
+    (t.observacao ? '<p style="margin-top:10px">' + ic('editar', 14) + ' ' + esc(t.observacao) + '</p>' : '') + '</div>' +
+    '<div class="lado">' + (logosExternos(e.codigo) ? '<div class="logos-externos">' + logosExternos(e.codigo) + '</div>' : '') +
+    '<label>Analista responsável</label>' +
+    (ed ? '<select id="sel-resp" data-change="atribuir">' + opcoesUsuarios(t.responsavelEmail) + '</select>' : '<div class="chip">' + esc(nomeUsuario(t.responsavelEmail)) + '</div>') +
+    '</div></div></div>';
+
+  var pend = '';
+  if (w.ativa) {
+    pend = w.pendencias.length
+      ? '<div class="pend"><div class="cab">' + ic('alerta', 18) + 'Para concluir esta etapa<span class="qtd">' + w.pendencias.length + ' pendência(s)</span></div><ul>' +
+        w.pendencias.map(function (x, i) {
+          var alvo = alvoPendencia(x);
+          return '<li><span class="c"></span><span>' + esc(x) + '</span>' +
+            (alvo ? '<a href="#" data-acao="irPendencia" data-i="' + i + '">' + alvo.acao + ' →</a>' : '') + '</li>';
+        }).join('') + '</ul></div>'
+      : '<div class="ok-box">' + ic('check', 18) + 'Tudo pronto! A etapa pode ser concluída.</div>';
+  }
+
+  var html = { A: bFormulario, B: bDocumentos, C: bChecklist, D: bSolicitacao, E: bCotacoes, F: bDecisao, I: bInstrucao, M: bMapa };
+  var blocos = w.blocos.map(function (b) { return html[b] ? html[b](w, ed) : ''; }).join('');
+
+  var rodape = '';
+  if (ed) {
+    rodape = '<div class="card"><div class="rodape-etapa"><div class="obs"><label>Observação ao concluir (opcional)</label><input id="obs-concluir" placeholder="Registrada no histórico"></div>' +
+      '<button class="btn verde" data-acao="concluir"' + (w.pendencias.length ? ' disabled title="Resolva as pendências acima"' : '') + '>' + ic('check', 16) + 'Concluir etapa</button></div>' +
+      (w.destinosDevolucao.length ? '<details class="devolver"><summary>Devolver para uma etapa anterior</summary><div class="linha" style="align-items:flex-end">' +
+        '<div><label>Devolver para</label><select id="dev-destino">' + w.destinosDevolucao.map(function (d) {
+          return '<option value="' + esc(d.codigo) + '">' + esc(d.nome) + '</option>';
+        }).join('') + '</select></div><div><label>Motivo <span class="obrig">*</span></label><input id="dev-motivo"></div>' +
+        '<div style="flex:0 0 auto"><button class="btn perigo" data-acao="devolver">' + ic('voltar', 16) + 'Devolver</button></div></div></details>' : '') + '</div>';
+  }
+  $('#area-trabalho').innerHTML = cab + pend + blocos + rodape;
+}
+</script>
