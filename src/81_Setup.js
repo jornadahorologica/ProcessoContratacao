@@ -45,11 +45,13 @@ function setup() {
 
   log = log.concat(Seed.carregar());
   log = log.concat(Migracoes.executar());
+  Db.gravar();
 
   var email = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
   if (email && !repo('cfg_Usuarios').obter(email)) {
     repo('cfg_Usuarios').inserir({ email: email, nome: email.split('@')[0], setor: 'CESOP', papel: PAPEIS.ADMIN, ativo: true });
     log.push('Administrador cadastrado: ' + email);
+    Db.gravar();
   }
   ConfigService.limparCache();
   log.push('Setup concluído. Publique o Web App em Implantar > Nova implantação > Aplicativo da Web.');

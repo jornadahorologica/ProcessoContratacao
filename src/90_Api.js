@@ -22,8 +22,9 @@ var API = {
         (m[a.tipoDocumento] = m[a.tipoDocumento] || []).push({ ordem: a.ordem, signatario: a.signatario, cargo: a.cargo });
         return m;
       }, {}),
-      dbUrl: u.papel === PAPEIS.ADMIN ? Db.planilha().getUrl() : '',
-      pastaRaizUrl: u.papel === PAPEIS.ADMIN ? DriveService.raiz().getUrl() : '',
+      dbUrl: u.papel === PAPEIS.ADMIN ? Db.url() : '',
+      pastaRaizUrl: u.papel === PAPEIS.ADMIN ? 'https://drive.google.com/drive/folders/' + Utils.prop(APP.PROP.ROOT_FOLDER_ID) : '',
+      leituraEmLote: Db.temApi(),
       sistemasExternos: Object.keys(APP.SISTEMAS_EXTERNOS).map(function (k) {
         var s = APP.SISTEMAS_EXTERNOS[k];
         return { nome: s.nome, url: s.url, etapas: s.etapas, logo: DriveService.imagemDataUri(s.logoFileId) };
@@ -34,6 +35,8 @@ var API = {
   painel: ['L', function () { return ProcessoService.painel(); }],
   listarProcessos: ['L', function (filtro) { return ProcessoService.listar(filtro); }],
   detalharProcesso: ['L', function (id) { return ProcessoService.detalhar(id); }],
+  telaProcesso: ['L', function (id, op) { return ProcessoService.tela(id, op); }],
+  historicoProcesso: ['L', function (id) { return ProcessoService.historico(id); }, []],
   criarProcesso: ['E', function (dados) { return ProcessoService.criar(dados); }],
   atualizarProcesso: ['E', function (id, dados) { return ProcessoService.atualizar(id, dados); }],
   alterarStatusProcesso: ['G', function (id, status, motivo) { return ProcessoService.alterarStatus(id, status, motivo); }],
@@ -80,11 +83,20 @@ var API = {
 
 var NIVEIS_ESCRITA = { E: true, G: true, A: true };
 
+/** Abas lidas numa única chamada no início de cada operação (com o serviço avançado). */
+var TABELAS_OPERACAO = ['Processos', 'Tarefas', 'Variaveis', 'Documentos', 'Assinaturas', 'PesquisaPrecos', 'Diligencias'];
+var SEM_PRECARGA = { contexto: true, recarregarConfig: true, situacaoConfiguracao: true, atualizarConfiguracao: true,
+  listarUsuarios: true, salvarUsuario: true, historicoProcesso: true };
+
 /**
  * Ponto de entrada único do front-end. Retorna JSON (string) no formato
  * {ok: true, data} ou {ok: false, erro}.
+ *
+ * tela (opcional) = {processoId, tarefaId, aba}: depois da operação, devolve
+ * também a tela do processo atualizada ({resultado, tela}) — o navegador não
+ * precisa fazer outra chamada para recarregar.
  */
-function apiCall(metodo, args) {
+function apiCall(metodo, args, tela) {
   try {
     var def = API[metodo];
     if (!def) throw Utils.erro('Operação inválida: ' + metodo);
@@ -93,7 +105,15 @@ function apiCall(metodo, args) {
     else if (nivel === 'E') Auth.exigirEdicao();
     else if (nivel === 'G') Auth.exigirGestao();
     else if (nivel === 'A') Auth.exigirAdmin();
-    var exec = function () { return def[1].apply(null, args || []); };
+    var exec = function () {
+      if (!SEM_PRECARGA[metodo]) Db.precarregar(TABELAS_OPERACAO);
+      var r = def[1].apply(null, args || []);
+      Db.gravar(); // grava tudo de uma vez (nada é gravado se houver erro antes daqui)
+      if (tela && tela.processoId) {
+        return { resultado: r === undefined ? null : r, tela: ProcessoService.tela(tela.processoId, tela) };
+      }
+      return r;
+    };
     var dados = NIVEIS_ESCRITA[nivel] ? Utils.comLock(exec) : exec();
     return JSON.stringify({ ok: true, data: dados === undefined ? null : dados });
   } catch (e) {

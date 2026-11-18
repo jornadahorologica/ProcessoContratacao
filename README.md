@@ -115,6 +115,21 @@ Blocos da área de trabalho (coluna `blocos`, separados por vírgula):
 - **Fluxo da assinatura:** Gerar documento → **Enviar para assinatura** (gera o PDF para juntar ao SUITE) → registrar cada assinatura → o documento vira **FINAL**. Um PDF já assinado e anexado ao sistema também conta como FINAL.
 - **Etapa com documento que exige assinatura:** só pode ser concluída com o documento FINAL.
 
+## Desempenho (recomendado: ativar a Google Sheets API)
+
+O sistema funciona sem nenhuma configuração extra, mas fica **bem mais rápido** com o serviço avançado **Google Sheets API**. Com ele, todas as abas são lidas numa única chamada e as gravações vão em lote. Para ativar:
+
+1. No editor do Apps Script, clique em **Serviços (+)**.
+2. Escolha **Google Sheets API** e mantenha o identificador **`Sheets`**.
+3. Clique em **Adicionar**.
+
+Se usar `clasp`, o `appsscript.json` já declara o serviço.
+
+Outras práticas adotadas:
+- **Gravação em lote:** cada operação grava tudo de uma vez, no fim. Se houver erro no meio, nada fica gravado pela metade.
+- **Uma ida ao servidor por ação:** a resposta já traz a tela atualizada.
+- **Histórico sob demanda:** é carregado só ao abrir a aba Histórico.
+
 ## Atualizando a configuração (migrações)
 
 Mudanças no fluxo depois da instalação, como o ETP com os 13 incisos, ficam em `src/82_Migracoes.js`. Para aplicá-las na planilha existente, execute o `setup` de novo: ele aplica as migrações pendentes **sem apagar dados**. A versão aplicada fica na propriedade `CFG_VERSAO`.

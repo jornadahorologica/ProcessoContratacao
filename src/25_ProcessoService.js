@@ -179,9 +179,41 @@ var ProcessoService = {
       documentos: DocumentoService.listar(id),
       assinaturas: AssinaturaService.listar(id),
       diligencias: DiligenciaService.listar(id),
-      historico: Historico.listar(id, 200),
       instrucao: Instrucao.verificar(p)
     };
+  },
+
+  /**
+   * Tudo o que a tela do processo precisa numa única chamada: detalhe + área
+   * de trabalho da etapa selecionada (op.tarefaId, op.etapa = código da etapa
+   * vindo da URL, ou automaticamente a etapa atual).
+   */
+  tela: function (idOuNumero, op) {
+    op = op || {};
+    var det = this.detalhar(idOuNumero);
+    var humanas = det.tarefas.filter(function (t) { return t.tipo === TIPO_ETAPA.TAREFA || t.tipo === TIPO_ETAPA.DECISAO; });
+    var sel = null, auto = false, etapaNaoIniciada = '';
+    if (op.tarefaId) sel = humanas.filter(function (t) { return t.id === op.tarefaId; })[0] || null;
+    if (!sel && op.etapa) {
+      sel = humanas.filter(function (t) { return t.etapaCodigo === op.etapa; }).slice(-1)[0] || null;
+      if (!sel) etapaNaoIniciada = op.etapa;
+    }
+    if (!sel) {
+      auto = true;
+      sel = humanas.filter(function (t) { return t.status === STATUS_TAREFA.ABERTA || t.status === STATUS_TAREFA.AGUARDANDO_RETORNO; })[0] ||
+        humanas.slice(-1)[0] || null;
+    }
+    return {
+      detalhe: det,
+      tarefaId: sel ? sel.id : null,
+      tarefa: sel && (op.aba || 'fluxo') === 'fluxo' ? this.abrirTarefa(sel.id) : null,
+      auto: auto,
+      etapaNaoIniciada: etapaNaoIniciada
+    };
+  },
+
+  historico: function (idOuNumero) {
+    return Historico.listar(this.resolver(idOuNumero).id, 300);
   },
 
   /** Dados da área de trabalho de uma tarefa (blocos configurados). */

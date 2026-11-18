@@ -6,8 +6,7 @@
 var S = { ctx: null, view: 'painel', procId: null, tarefaId: null, aba: 'fluxo', det: null, tar: null };
 
 // ------------------------------------------------------------------ utilitários
-function api(metodo) {
-  var args = Array.prototype.slice.call(arguments, 1);
+function chamar_(metodo, args, tela) {
   return new Promise(function (ok, falha) {
     google.script.run
       .withSuccessHandler(function (s) {
@@ -15,7 +14,22 @@ function api(metodo) {
         if (r.ok) ok(r.data); else falha(new Error(r.erro));
       })
       .withFailureHandler(function (e) { falha(e instanceof Error ? e : new Error(String(e))); })
-      .apiCall(metodo, args);
+      .apiCall(metodo, args, tela || null);
+  });
+}
+function api(metodo) {
+  return chamar_(metodo, Array.prototype.slice.call(arguments, 1));
+}
+/**
+ * Executa uma operação no processo aberto e recebe, na MESMA chamada, a tela
+ * atualizada (processo + etapa). opcoes.auto = escolher a etapa atual (após concluir/devolver).
+ */
+function acaoTela(metodo, args, msgOk, opcoes) {
+  var tela = { processoId: S.procId, tarefaId: opcoes && opcoes.auto ? null : S.tarefaId, aba: S.aba };
+  return ocupado(chamar_(metodo, args, tela), msgOk).then(function (r) {
+    aplicarTela(r.tela);
+    Rotas.atualizar(true);
+    return r.resultado;
   });
 }
 function esc(s) {
@@ -313,9 +327,25 @@ function vNovo() {
 
 // ------------------------------------------------------------------ DETALHE DO PROCESSO
 function vProcesso() {
-  return api('detalharProcesso', S.procId).then(function (det) {
-    S.det = det;
-    S.procId = det.processo.id; // a URL pode trazer o número; daqui em diante usa o id interno
+  return api('telaProcesso', S.procId, { tarefaId: S.tarefaId, etapa: S.etapaRota, aba: S.aba }).then(aplicarTela);
+}
+
+/** Aplica a tela recebida do servidor (detalhe + etapa selecionada) sem nova chamada. */
+function aplicarTela(tela) {
+  S.det = tela.detalhe;
+  S.procId = tela.detalhe.processo.id; // a URL pode trazer o número; daqui em diante usa o id interno
+  S.tarefaId = tela.tarefaId;
+  S.tar = tela.tarefa;
+  S.autoSelecionada = tela.auto;
+  if (tela.etapaNaoIniciada) toast('A etapa "' + tela.etapaNaoIniciada + '" ainda não foi iniciada neste processo.', true);
+  S.etapaRota = null;
+  renderProcesso();
+  return renderAba();
+}
+
+function renderProcesso() {
+  var det = S.det;
+  (function () {
     var p = det.processo;
     var gestao = ehGestor() ? (
       p.status === 'EM_ANDAMENTO' ? '<button class="btn sec peq" data-acao="statusProcesso" data-status="SUSPENSO">Suspender</button> ' +
@@ -333,8 +363,7 @@ function vProcesso() {
       '<div class="abas">' + abas.map(function (a) {
         return '<a href="#" data-acao="aba" data-aba="' + a[0] + '" class="' + (S.aba === a[0] ? 'ativo' : '') + '">' + a[1] + '</a>';
       }).join('') + '</div><div id="conteudo-aba"></div>');
-    return renderAba();
-  });
+  })();
 }
 
 function renderAba() {
@@ -346,19 +375,6 @@ function renderAba() {
 // ---------- aba Fluxo: linha do tempo + área de trabalho da etapa
 function abaFluxo(alvo) {
   var det = S.det;
-  S.autoSelecionada = false;
-  if (S.etapaRota) {
-    var daRota = det.linhaDoTempo.filter(function (e) { return e.codigo === S.etapaRota && e.tarefaId; })[0];
-    if (daRota) S.tarefaId = daRota.tarefaId;
-    else toast('A etapa "' + S.etapaRota + '" ainda não foi iniciada neste processo.', true);
-    S.etapaRota = null;
-  }
-  if (!S.tarefaId) {
-    S.autoSelecionada = true;
-    var ativa = det.tarefas.filter(function (t) { return t.status === 'ABERTA' || t.status === 'AGUARDANDO_RETORNO'; })[0];
-    var ultima = det.tarefas.filter(function (t) { return t.tipo === 'TAREFA' || t.tipo === 'DECISAO'; }).slice(-1)[0];
-    S.tarefaId = (ativa || ultima || {}).id || null;
-  }
   var faseAtual = null;
   var tl = det.linhaDoTempo.map(function (e) {
     var cab = '';
@@ -370,7 +386,9 @@ function abaFluxo(alvo) {
   }).join('');
   alvo.innerHTML = '<div class="fluxo"><div class="card timeline"><h2>Etapas</h2>' + tl + '</div>' +
     '<div id="area-trabalho">' + (S.tarefaId ? '<div class="carregando">Carregando etapa…</div>' : '<div class="card vazio">Selecione uma etapa.</div>') + '</div></div>';
-  if (S.tarefaId) return carregarTarefa(S.tarefaId);
+  if (!S.tarefaId) return;
+  if (S.tar && S.tar.tarefa && S.tar.tarefa.id === S.tarefaId) return renderTrabalho(); // já veio na resposta
+  return carregarTarefa(S.tarefaId);
 }
 
 function carregarTarefa(id) {
@@ -706,10 +724,13 @@ function abaDados(alvo) {
 
 // ---------- aba Histórico
 function abaHistorico(alvo) {
-  alvo.innerHTML = '<div class="card"><h2>Histórico (auditoria)</h2><table><tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Detalhe</th></tr>' +
-    S.det.historico.map(function (h) {
-      return '<tr><td>' + dataBR(h.dataHora) + '</td><td>' + esc(nomeUsuario(h.usuario)) + '</td><td>' + esc(h.acao) + '</td><td>' + esc(h.detalhe) + '</td></tr>';
-    }).join('') + '</table></div>';
+  alvo.innerHTML = '<div class="card carregando">Carregando histórico…</div>';
+  return api('historicoProcesso', S.procId).then(function (lista) {
+    alvo.innerHTML = '<div class="card"><h2>Histórico (auditoria)</h2><table><tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Detalhe</th></tr>' +
+      lista.map(function (h) {
+        return '<tr><td>' + dataBR(h.dataHora) + '</td><td>' + esc(nomeUsuario(h.usuario)) + '</td><td>' + esc(h.acao) + '</td><td>' + esc(h.detalhe) + '</td></tr>';
+      }).join('') + '</table>' + (lista.length >= 300 ? '<p class="ajuda">Mostrando os 300 registros mais recentes.</p>' : '') + '</div>';
+  });
 }
 
 // ------------------------------------------------------------------ ADMIN
@@ -789,55 +810,47 @@ var ACOES = {
   statusProcesso: function (d) {
     var motivo = prompt('Motivo para "' + (ROTULOS[d.status] || d.status) + '":');
     if (!motivo) return;
-    ocupado(api('alterarStatusProcesso', S.procId, d.status, motivo), 'Status alterado.').then(function () { recarregarProcesso(); });
+    acaoTela('alterarStatusProcesso', [S.procId, d.status, motivo], 'Status alterado.');
   },
   salvarProcesso: function () {
-    ocupado(api('atualizarProcesso', S.procId, valoresForm($('#form-dados'))), 'Dados salvos.').then(function () { recarregarProcesso(); });
+    acaoTela('atualizarProcesso', [S.procId, valoresForm($('#form-dados'))], 'Dados salvos.');
   },
 
   salvarCampos: function (d) {
     var v = valoresForm($(d.raiz));
-    ocupado(api('salvarCampos', S.tarefaId, v), 'Dados salvos.').then(function () { carregarTarefa(S.tarefaId); });
+    acaoTela('salvarCampos', [S.tarefaId, v], 'Dados salvos.');
   },
   checklist: function (d, el) {
-    ocupado(api('marcarChecklist', S.tarefaId, d.item, el.checked)).then(function () { carregarTarefa(S.tarefaId); });
+    acaoTela('marcarChecklist', [S.tarefaId, d.item, el.checked]);
   },
   registrarEnvio: function () {
-    ocupado(api('registrarEnvio', S.tarefaId, $('#env-ref').value, $('#env-data').value), 'Envio registrado.').then(function () { recarregarProcesso(); });
+    acaoTela('registrarEnvio', [S.tarefaId, $('#env-ref').value, $('#env-data').value], 'Envio registrado.');
   },
   registrarRetorno: function () {
-    ocupado(api('registrarRetorno', S.tarefaId, $('#ret-ref').value, $('#ret-data').value), 'Retorno registrado.').then(function () { recarregarProcesso(); });
+    acaoTela('registrarRetorno', [S.tarefaId, $('#ret-ref').value, $('#ret-data').value], 'Retorno registrado.');
   },
   concluir: function () {
     if (!confirm('Concluir a etapa "' + S.tar.etapa.nome + '"?')) return;
-    ocupado(api('concluirTarefa', S.tarefaId, $('#obs-concluir').value), 'Etapa concluída.').then(function () {
-      S.tarefaId = null;
-      recarregarProcesso();
-    });
+    acaoTela('concluirTarefa', [S.tarefaId, $('#obs-concluir').value], 'Etapa concluída.', { auto: true });
   },
   devolver: function () {
     var destino = $('#dev-destino').value, motivo = $('#dev-motivo').value;
     if (!motivo) return toast('Informe o motivo da devolução.', true);
     if (!confirm('Devolver o processo para a etapa selecionada?')) return;
-    ocupado(api('devolverTarefa', S.tarefaId, destino, motivo), 'Etapa devolvida.').then(function () {
-      S.tarefaId = null;
-      recarregarProcesso();
-    });
+    acaoTela('devolverTarefa', [S.tarefaId, destino, motivo], 'Etapa devolvida.', { auto: true });
   },
 
   gerarDoc: function (d) {
-    ocupado(api('gerarDocumento', S.procId, d.tipo, S.tarefaId), 'Documento gerado. Abra-o para editar.').then(function (doc) {
+    acaoTela('gerarDocumento', [S.procId, d.tipo, S.tarefaId], 'Documento gerado. Abra-o para editar.').then(function (doc) {
       window.open(doc.url, '_blank');
-      carregarTarefa(S.tarefaId);
     });
   },
   anexar: function (d) {
     var p = d.prefixo;
     var noFluxo = p === 'wt';
     lerArquivo($('#' + p + '-arq')).then(function (arq) {
-      return ocupado(api('anexarDocumento', S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', arq), 'Documento anexado.');
-    }).then(function () { noFluxo ? carregarTarefa(S.tarefaId) : recarregarProcesso(); })
-      .catch(function (e) { toast(e.message, true); });
+      return acaoTela('anexarDocumento', [S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', arq], 'Documento anexado.');
+    }).catch(function (e) { toast(e.message, true); });
   },
   vincular: function (d) {
     var p = d.prefixo;
@@ -845,23 +858,18 @@ var ACOES = {
     var link = $('#' + p + '-link').value;
     if (!link) return toast('Informe o link do arquivo.', true);
     var mover = confirm('Mover o arquivo para a pasta do processo?\n(OK = mover, Cancelar = apenas vincular)');
-    ocupado(api('vincularDocumento', S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', link, mover), 'Documento vinculado.')
-      .then(function () { noFluxo ? carregarTarefa(S.tarefaId) : recarregarProcesso(); });
+    acaoTela('vincularDocumento', [S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', link, mover], 'Documento vinculado.');
   },
   enviarAssinatura: function (d) {
     if (!confirm('Gerar o PDF e abrir o controle de assinaturas no SUITE?\nDepois de juntar o PDF ao SUITE, registre aqui cada assinatura.')) return;
-    ocupado(api('enviarParaAssinatura', d.doc), 'PDF gerado. Junte-o ao SUITE para assinatura.').then(function () {
-      S.aba === 'fluxo' ? carregarTarefa(S.tarefaId) : recarregarProcesso();
-    });
+    acaoTela('enviarParaAssinatura', [d.doc], 'PDF gerado. Junte-o ao SUITE para assinatura.');
   },
   registrarAssinatura: function (d) {
     var data = prompt('Data da assinatura no SUITE (dd/mm/aaaa):', new Date().toLocaleDateString('pt-BR'));
     if (data === null) return;
     var m = String(data).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m) return toast('Data inválida. Use dd/mm/aaaa.', true);
-    ocupado(api('registrarAssinatura', d.id, m[3] + '-' + m[2] + '-' + m[1]), 'Assinatura registrada.').then(function () {
-      S.aba === 'fluxo' ? carregarTarefa(S.tarefaId) : recarregarProcesso();
-    });
+    acaoTela('registrarAssinatura', [d.id, m[3] + '-' + m[2] + '-' + m[1]], 'Assinatura registrada.');
   },
   usarSugestao: function (d) {
     var s = S.tar.sugestoes[d.campo];
@@ -877,32 +885,29 @@ var ACOES = {
     secoes.forEach(function (x) { x.open = abrir; });
   },
   statusDoc: function (d) {
-    ocupado(api('alterarStatusDocumento', d.doc, d.status), 'Status do documento alterado.').then(function () {
-      S.aba === 'fluxo' ? carregarTarefa(S.tarefaId) : recarregarProcesso();
-    });
+    acaoTela('alterarStatusDocumento', [d.doc, d.status], 'Status do documento alterado.');
   },
 
   salvarCotacao: function () {
-    ocupado(api('salvarCotacao', S.procId, valoresForm($('#form-cot'))), 'Cotação registrada.').then(function () { carregarTarefa(S.tarefaId); });
+    acaoTela('salvarCotacao', [S.procId, valoresForm($('#form-cot'))], 'Cotação registrada.');
   },
   removerCotacao: function (d) {
     if (!confirm('Excluir esta cotação?')) return;
-    ocupado(api('removerCotacao', d.id), 'Cotação excluída.').then(function () { carregarTarefa(S.tarefaId); });
+    acaoTela('removerCotacao', [d.id], 'Cotação excluída.');
   },
   toggleCotacao: function (d, el) {
     var c = S.tar.cotacoes.filter(function (x) { return x.id === d.id; })[0];
     c.considerado = el.checked;
-    ocupado(api('salvarCotacao', S.procId, c)).then(function () { carregarTarefa(S.tarefaId); });
+    acaoTela('salvarCotacao', [S.procId, c]);
   },
   gerarMapa: function () {
-    ocupado(api('gerarMapa', S.procId, $('#mapa-metodo').value, S.tarefaId), 'Mapa comparativo gerado.').then(function (doc) {
+    acaoTela('gerarMapa', [S.procId, $('#mapa-metodo').value, S.tarefaId], 'Mapa comparativo gerado.').then(function (doc) {
       window.open(doc.url, '_blank');
-      carregarTarefa(S.tarefaId);
     });
   },
 
   registrarDiligencia: function () {
-    ocupado(api('registrarDiligencia', S.procId, valoresForm($('#form-dil'))), 'Diligência registrada.').then(function () { recarregarProcesso(); });
+    acaoTela('registrarDiligencia', [S.procId, valoresForm($('#form-dil'))], 'Diligência registrada.');
   },
   responderDiligencia: function (d) {
     var resposta = $('#resp-' + d.id).value;
@@ -910,8 +915,8 @@ var ACOES = {
     var envio = input.files && input.files[0]
       ? lerArquivo(input).then(function (arq) { return api('anexarDocumento', S.procId, 'RESPOSTA_DESPACHO', '', arq); }).then(function (doc) { return doc.id; })
       : Promise.resolve('');
-    ocupado(envio.then(function (docId) { return api('responderDiligencia', d.id, resposta, docId); }), 'Resposta registrada.')
-      .then(function () { recarregarProcesso(); });
+    envio.then(function (docId) { return acaoTela('responderDiligencia', [d.id, resposta, docId], 'Resposta registrada.'); })
+      .catch(function (e) { toast(e.message, true); });
   },
 
   editarUsuario: function (d) {

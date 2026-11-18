@@ -5,11 +5,11 @@
  */
 var Notificacao = {
   ativa: function () {
-    return String(PropertiesService.getScriptProperties().getProperty(APP.PROP.NOTIFICAR)).toLowerCase() === 'true';
+    return String(Utils.prop(APP.PROP.NOTIFICAR)).toLowerCase() === 'true';
   },
 
   link: function () {
-    return PropertiesService.getScriptProperties().getProperty(APP.PROP.APP_URL) || '';
+    return Utils.prop(APP.PROP.APP_URL) || '';
   },
 
   tarefaCriada: function (proc, tarefa) {

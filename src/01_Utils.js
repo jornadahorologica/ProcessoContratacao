@@ -66,6 +66,12 @@ var Utils = {
     }
   },
 
+  /** Propriedade do script (lidas uma vez por execução). */
+  prop: function (chave) {
+    if (!Utils._props) Utils._props = PropertiesService.getScriptProperties().getProperties();
+    return Utils._props.hasOwnProperty(chave) ? Utils._props[chave] : null;
+  },
+
   erro: function (msg) {
     var e = new Error(msg);
     e.negocio = true;

@@ -37,6 +37,7 @@ var Migracoes = {
     var atual = this.versaoAtual();
     this.lista.filter(function (m) { return m.versao > atual; }).forEach(function (m) {
       m.aplicar(self);
+      Db.gravar();
       PropertiesService.getScriptProperties().setProperty(self.PROP, String(m.versao));
       log.push('Migração ' + m.versao + ' aplicada: ' + m.descricao);
     });

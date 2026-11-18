@@ -10,6 +10,8 @@ function criarAmbiente(opcoes) {
   const estado = {
     usuarioAtivo: opcoes.usuario || 'admin@orgao.gov.br',
     emails: [],
+    // Contadores de chamadas à planilha (cada uma custa ~0,1–0,5 s no Apps Script real)
+    chamadas: { leituras: 0, escritas: 0, formatos: 0 },
     planilhas: {},
     arquivos: {},
     props: {},
@@ -22,6 +24,7 @@ function criarAmbiente(opcoes) {
   class Range {
     constructor(sh, r, c, nr, nc) { Object.assign(this, { sh, r, c, nr, nc }); }
     getValues() {
+      estado.chamadas.leituras++;
       const out = [];
       for (let i = 0; i < this.nr; i++) {
         const row = [];
@@ -35,6 +38,7 @@ function criarAmbiente(opcoes) {
       return out;
     }
     setValues(vals) {
+      estado.chamadas.escritas++;
       if (vals.length !== this.nr || vals[0].length !== this.nc) throw new Error('setValues: dimensões incompatíveis');
       for (let i = 0; i < this.nr; i++) {
         const idx = this.r - 1 + i;
@@ -47,7 +51,7 @@ function criarAmbiente(opcoes) {
       }
       return this;
     }
-    setNumberFormat() { return this; }
+    setNumberFormat() { estado.chamadas.formatos++; return this; }
     setFontWeight() { return this; }
     setBackground() { return this; }
   }
@@ -61,11 +65,15 @@ function criarAmbiente(opcoes) {
       return 0;
     }
     getLastColumn() { return this.dados.reduce((m, l) => Math.max(m, (l || []).length), 0); }
-    getMaxRows() { return Math.max(1000, this.dados.length); }
-    getRange(r, c, nr, nc) { return new Range(this, r, c, nr || 1, nc || 1); }
+    getMaxRows() { return Math.max(this.maxRows || 1000, this.dados.length); }
+    insertRowsAfter(apos, n) { this.maxRows = this.getMaxRows() + n; }
+    getRange(r, c, nr, nc) {
+      if (r + (nr || 1) - 1 > this.getMaxRows()) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+      return new Range(this, r, c, nr || 1, nc || 1);
+    }
     getDataRange() { return new Range(this, 1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1)); }
     appendRow(row) { this.dados.splice(this.getLastRow(), 0, row.map(String)); }
-    deleteRow(r) { this.dados.splice(r - 1, 1); }
+    deleteRow(r) { estado.chamadas.escritas++; this.dados.splice(r - 1, 1); }
     setFrozenRows() {}
   }
   class Spreadsheet {
@@ -204,6 +212,7 @@ function criarAmbiente(opcoes) {
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: (k) => (k in estado.props ? estado.props[k] : null),
+        getProperties: () => Object.assign({}, estado.props),
         setProperty: (k, v) => { estado.props[k] = String(v); }
       })
     },
@@ -211,6 +220,8 @@ function criarAmbiente(opcoes) {
       getScriptCache: () => ({
         get: (k) => estado.cache[k] || null,
         put: (k, v) => { estado.cache[k] = v; },
+        getAll: (ks) => { const r = {}; ks.forEach((k) => { if (k in estado.cache) r[k] = estado.cache[k]; }); return r; },
+        putAll: (m) => { Object.assign(estado.cache, m); },
         remove: (k) => { delete estado.cache[k]; }
       })
     },
@@ -232,6 +243,51 @@ function criarAmbiente(opcoes) {
       newBlob: (bytes, mime, nome) => ({ bytes, mime, nome })
     },
     MailApp: { sendEmail: (m) => estado.emails.push(m) },
+    // Serviço avançado "Google Sheets API" (opcional no projeto real)
+    Sheets: opcoes.semSheetsApi ? undefined : {
+      Spreadsheets: {
+        Values: {
+          batchGet(id, req) {
+            estado.chamadas.leituras++;
+            const ss = SpreadsheetApp.openById(id);
+            return {
+              valueRanges: req.ranges.map((r) => {
+                const sh = ss.getSheetByName(r.replace(/^'|'$/g, '').split("'!")[0]);
+                const ult = sh.getLastRow();
+                const values = sh.dados.slice(0, ult).map((l) => {
+                  const c = (l || []).map((v) => (v === undefined ? '' : String(v)));
+                  while (c.length && c[c.length - 1] === '') c.pop();
+                  return c;
+                });
+                return { range: r, values };
+              })
+            };
+          },
+          append(body, id, range, opts) {
+            estado.chamadas.escritas++;
+            if (opts.valueInputOption !== 'RAW') throw new Error('esperado RAW');
+            const sh = SpreadsheetApp.openById(id).getSheetByName(range.split("'!")[0].replace(/^'/, ''));
+            const inicio = sh.getLastRow() + 1;
+            body.values.forEach((l, i) => {
+              l.forEach((v) => { if (typeof v !== 'string') throw new Error('append: valor não texto'); });
+              sh.dados[inicio - 1 + i] = l.slice();
+            });
+            return { updates: { updatedRange: "'" + sh.nome + "'!A" + inicio + ':Z' + (inicio + body.values.length - 1) } };
+          },
+          batchUpdate(body, id) {
+            estado.chamadas.escritas++;
+            if (body.valueInputOption !== 'RAW') throw new Error('esperado RAW');
+            body.data.forEach((d) => {
+              Object.keys(d).forEach((k) => { if (['range', 'values'].indexOf(k) < 0) throw new Error('campo inválido na API: ' + k); });
+              const m = d.range.match(/^'(.+)'!A(\d+):[A-Z]+(\d+)$/);
+              const sh = SpreadsheetApp.openById(id).getSheetByName(m[1]);
+              d.values.forEach((l, i) => { sh.dados[Number(m[2]) - 1 + i] = l.slice(); });
+            });
+            return {};
+          }
+        }
+      }
+    },
     HtmlService: {},
     ScriptApp: {}
   };

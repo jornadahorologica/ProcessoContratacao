@@ -15,7 +15,7 @@ const SRC = path.join(__dirname, '..', 'src');
 const saida = process.argv[2];
 
 function backend() {
-  const { ctx, estado } = criarAmbiente();
+  const { ctx, estado } = criarAmbiente({ semSheetsApi: !!process.env.SEM_SHEETS_API });
   // Logo simulado do SUITE (no Apps Script ele é lido do Drive)
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="120" height="40" rx="6" fill="#0b6e4f"/>' +
     '<text x="60" y="27" font-family="Arial" font-size="20" font-weight="bold" fill="#fff" text-anchor="middle">SUITE</text></svg>';
@@ -26,9 +26,9 @@ function backend() {
   fs.readdirSync(SRC).filter((f) => f.endsWith('.js')).sort()
     .forEach((f) => vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f }));
   ctx.setup();
-  const fn = (metodo, args) => {
-    vm.runInContext('_repos = {}; ConfigService._memo = null; Auth._usuario = null; Db._ss = null; Db._sheets = {}; Workflow._cacheAlc = null;', ctx);
-    return ctx.apiCall(metodo, args);
+  const fn = (metodo, args, tela) => {
+    vm.runInContext('Db.gravar(); _repos = {}; ConfigService._memo = null; Auth._usuario = null; Db._ss = null; Db._sheets = {}; Db._id = null; Utils._props = null; Workflow._cacheAlc = null;', ctx);
+    return ctx.apiCall(metodo, args, tela);
   };
   fn.estado = estado;
   return fn;
@@ -41,7 +41,7 @@ function montarHtml() {
     window.google = { script: {
       run: (function mk(ok, fail) {
         return { withSuccessHandler: (f) => mk(f, fail), withFailureHandler: (f) => mk(ok, f),
-          apiCall: (m, a) => window.__api(m, a).then(ok, fail) };
+          apiCall: (m, a, t) => window.__api(m, a, t || null).then(ok, fail) };
       })(),
       history: {
         push: (st, par, h) => history.pushState(null, '', '#' + h),
@@ -64,7 +64,7 @@ function montarHtml() {
   page.on('pageerror', (e) => erros.push(e.message));
   page.on('console', (m) => process.env.DEBUG && console.log('[browser]', m.text()));
   page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? (d.defaultValue() || 'teste') : undefined));
-  await page.exposeFunction('__api', (m, a) => api(m, a));
+  await page.exposeFunction('__api', (m, a, t) => api(m, a, t));
   const html = montarHtml();
   await page.route('http://app.local/**', (r) => r.fulfill({ contentType: 'text/html', body: html }));
   await page.goto('http://app.local/exec');
@@ -95,7 +95,10 @@ function montarHtml() {
   await page.fill('[name=numeroSuite]', '12345/2026');
   await page.fill('[name=dataAberturaSuite]', '2026-11-10');
   await page.click('text=Salvar dados');
-  await page.waitForSelector('.ok-box');
+  await page.waitForSelector('.ok-box', { timeout: 8000 }).catch(async (e) => {
+    console.error('toast:', await page.textContent('#toast'), 'erros:', erros);
+    throw e;
+  });
   await page.click('text=Concluir etapa');
   await page.waitForFunction(() => /Elaborar DFD/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
   await esperarCarregar();

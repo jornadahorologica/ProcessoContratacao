@@ -11,14 +11,15 @@ const { criarAmbiente } = require('./gas-mock');
 
 const SRC = path.join(__dirname, '..', 'src');
 
+let MODO = {};
 function carregar(opcoes) {
-  const { ctx, estado } = criarAmbiente(opcoes);
+  const { ctx, estado } = criarAmbiente(Object.assign({}, MODO, opcoes));
   vm.createContext(ctx);
   const arquivos = fs.readdirSync(SRC).filter((f) => f.endsWith('.js')).sort();
   arquivos.forEach((f) => vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f }));
   // Simula o início de uma nova execução do Apps Script (memória por execução zerada)
   const novaExecucao = () => vm.runInContext(
-    '_repos = {}; ConfigService._memo = null; Auth._usuario = null; Db._ss = null; Db._sheets = {}; Workflow._cacheAlc = null;', ctx);
+    'Db.gravar(); _repos = {}; ConfigService._memo = null; Auth._usuario = null; Db._ss = null; Db._sheets = {}; Db._id = null; Utils._props = null; Workflow._cacheAlc = null;', ctx);
   const chamar = (metodo, ...args) => {
     novaExecucao();
     return JSON.parse(ctx.apiCall(metodo, args));
@@ -329,8 +330,70 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   assert.strictEqual(det.processo.status, 'CONCLUIDO');
   assert.strictEqual(det.processo.fase, 'CONCLUIDO');
   assert.deepStrictEqual(ativas(env, p.id), []);
-  assert.ok(det.historico.some((h) => h.acao === 'ETAPA_DEVOLVIDA'));
-  assert.ok(det.historico.some((h) => h.acao === 'PROCESSO_CONCLUIDO'));
+  assert.strictEqual(det.historico, undefined, 'histórico é carregado sob demanda');
+  const hist = env.ok('historicoProcesso', p.numero);
+  assert.ok(hist.some((h) => h.acao === 'ETAPA_DEVOLVIDA'));
+  assert.ok(hist.some((h) => h.acao === 'PROCESSO_CONCLUIDO'));
+});
+
+teste('Tela única: operação devolve o processo e a etapa atualizados na mesma chamada', () => {
+  const env = carregar();
+  env.ctx.setup();
+  const p = env.ok('criarProcesso', { titulo: 'Tela', objeto: 'O' });
+  // Abertura: escolhe a etapa atual automaticamente; pela URL, pela etapa
+  let tela = env.ok('telaProcesso', p.numero, {});
+  assert.strictEqual(tela.detalhe.processo.id, p.id);
+  assert.strictEqual(tela.tarefa.etapa.codigo, 'ABRIR_SUITE');
+  assert.strictEqual(tela.auto, true);
+  assert.strictEqual(env.ok('telaProcesso', p.numero, { etapa: 'ETP' }).etapaNaoIniciada, 'ETP');
+  assert.strictEqual(env.ok('telaProcesso', p.numero, { aba: 'documentos' }).tarefa, null, 'fora da aba Fluxo não monta a etapa');
+  // Operação com "tela": resultado + tela na mesma resposta
+  const chamar = (m, args, t) => JSON.parse(env.ctx.apiCall(m, args, t));
+  env.novaExecucao();
+  let r = chamar('salvarCampos', [tela.tarefaId, { numeroSuite: '42/2026', dataAberturaSuite: '2026-11-10' }],
+    { processoId: p.id, tarefaId: tela.tarefaId });
+  assert.ok(r.ok, r.erro);
+  assert.strictEqual(r.data.resultado, true);
+  assert.strictEqual(r.data.tela.detalhe.processo.numeroSuite, '42/2026');
+  assert.deepStrictEqual(r.data.tela.tarefa.pendencias, []);
+  // Concluir com seleção automática: a tela já vem na próxima etapa
+  env.novaExecucao();
+  r = chamar('concluirTarefa', [tela.tarefaId, ''], { processoId: p.id });
+  assert.ok(r.ok, r.erro);
+  assert.strictEqual(r.data.tela.tarefa.etapa.codigo, 'DFD');
+  // Erro: nada é gravado (tudo ou nada) e a mensagem volta normalmente
+  env.novaExecucao();
+  const dfd = r.data.tela.tarefaId;
+  r = chamar('salvarCampos', [dfd, { unidadeDemandante: 'NAO DEVE GRAVAR', quantidadeDFD: '1,5' }], { processoId: p.id, tarefaId: dfd });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(env.ok('detalharProcesso', p.id).variaveis.unidadeDemandante, undefined);
+});
+
+teste('Desempenho: poucas chamadas à planilha por operação e abas com mais de 1000 linhas', () => {
+  const env = carregar();
+  env.ctx.setup();
+  const p = env.ok('criarProcesso', { titulo: 'Perf', objeto: 'O' });
+  concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
+  concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'C', descricaoNecessidade: 'x', grauPrioridade: 'Alta', quantidadeDFD: 1, unidadeMedidaDFD: 'Lote' });
+  concluirSimples(env, p.id, 'CONSULTA_ETICE', { resultadoConsultaEtice: 'Favorável' });
+  const t = tarefaAberta(env, p.id, 'ETP');
+  const medir = (m, ...a) => {
+    env.novaExecucao();
+    const c0 = Object.assign({}, env.estado.chamadas);
+    const r = JSON.parse(env.ctx.apiCall(m, a));
+    assert.ok(r.ok, r.erro);
+    return Object.keys(c0).reduce((s, k) => s + env.estado.chamadas[k] - c0[k], 0);
+  };
+  const n = medir('salvarCampos', t.id, camposEtp());
+  const limite = MODO.semSheetsApi ? 12 : 4;
+  assert.ok(n <= limite, 'salvar o ETP (17 campos) fez ' + n + ' chamadas à planilha (limite ' + limite + ')');
+  // Muitas linhas: o histórico passa de 1000 linhas sem erro de "fora da grade"
+  for (let i = 0; i < 70; i++) env.ok('salvarCampos', t.id, { etpNecessidade: 'v' + i, etpRequisitos: 'r' + i, etpSolucao: 's' + i });
+  env.novaExecucao();
+  for (let i = 0; i < 1100; i++) env.ctx.Historico.registrar(p.id, '', 'TESTE', 'linha ' + i);
+  env.novaExecucao();
+  const ss = Object.values(env.estado.planilhas)[0];
+  assert.ok(ss.getSheetByName('Historico').getLastRow() > 1100);
 });
 
 teste('Natureza contínua = SIM: junção espera a Justificativa', () => {
@@ -549,14 +612,21 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
 
 // ------------------------------------------------------------------ execução
 let falhas = 0;
-testes.forEach(({ nome, fn }) => {
-  try {
-    fn();
-    console.log('  ✔ ' + nome);
-  } catch (e) {
-    falhas++;
-    console.log('  ✘ ' + nome + '\n    ' + (e.stack || e).split('\n').slice(0, 6).join('\n    '));
-  }
+let total = 0;
+[{ rotulo: 'com o serviço avançado Google Sheets API', modo: {} },
+  { rotulo: 'sem o serviço avançado (SpreadsheetApp)', modo: { semSheetsApi: true } }].forEach(({ rotulo, modo }) => {
+  MODO = modo;
+  console.log('\n' + rotulo + ':');
+  testes.forEach(({ nome, fn }) => {
+    total++;
+    try {
+      fn();
+      console.log('  ✔ ' + nome);
+    } catch (e) {
+      falhas++;
+      console.log('  ✘ ' + nome + '\n    ' + (e.stack || e).split('\n').slice(0, 6).join('\n    '));
+    }
+  });
 });
-console.log('\n' + (testes.length - falhas) + '/' + testes.length + ' testes passaram.');
+console.log('\n' + (total - falhas) + '/' + total + ' testes passaram.');
 process.exit(falhas ? 1 : 0);

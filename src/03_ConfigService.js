@@ -7,30 +7,42 @@
  */
 var ConfigService = {
   _memo: null,
-  CHAVE_CACHE: 'cfg_v2',
+  CHAVE_CACHE: 'cfg_v3',
 
   carregar: function () {
     if (this._memo) return this._memo;
     var cache = CacheService.getScriptCache();
-    var bruto = null;
-    try { bruto = cache.get(this.CHAVE_CACHE); } catch (e) { bruto = null; }
-    if (bruto) {
-      this._memo = JSON.parse(bruto);
-      return this._memo;
-    }
+    try {
+      var n = Number(cache.get(this.CHAVE_CACHE + '_n'));
+      if (n > 0) {
+        var chaves = [];
+        for (var i = 0; i < n; i++) chaves.push(this.CHAVE_CACHE + '_' + i);
+        var partes = cache.getAll(chaves);
+        if (chaves.every(function (k) { return partes[k]; })) {
+          this._memo = JSON.parse(chaves.map(function (k) { return partes[k]; }).join(''));
+          return this._memo;
+        }
+      }
+    } catch (e) { /* cache indisponível: lê da planilha */ }
+
+    Db.precarregar(TABELAS_CONFIG); // uma única leitura para todas as abas cfg_* (com o serviço avançado)
     var cfg = {};
     TABELAS_CONFIG.forEach(function (t) { cfg[t] = repo(t).todos(); });
     try {
-      cache.put(this.CHAVE_CACHE, JSON.stringify(cfg), APP.CACHE_TTL_SEG);
-    } catch (e) {
-      // Configuração maior que o limite do cache (100 KB): segue sem cache.
-    }
+      // O CacheService aceita até 100 KB por chave: divide em partes de 90 mil caracteres
+      var json = JSON.stringify(cfg);
+      var mapa = {};
+      var qtd = Math.ceil(json.length / 90000);
+      for (var j = 0; j < qtd; j++) mapa[this.CHAVE_CACHE + '_' + j] = json.substr(j * 90000, 90000);
+      mapa[this.CHAVE_CACHE + '_n'] = String(qtd);
+      cache.putAll(mapa, APP.CACHE_TTL_SEG);
+    } catch (e) { /* segue sem cache */ }
     this._memo = cfg;
     return cfg;
   },
 
   limparCache: function () {
-    CacheService.getScriptCache().remove(this.CHAVE_CACHE);
+    try { CacheService.getScriptCache().remove(this.CHAVE_CACHE + '_n'); } catch (e) { /* ignora */ }
     this._memo = null;
   },
 
