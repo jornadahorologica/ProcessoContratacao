@@ -59,18 +59,26 @@ function montarHtml() {
 (async () => {
   const api = backend();
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: saida ? 2 : 1 });
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   page.on('console', (m) => process.env.DEBUG && console.log('[browser]', m.text()));
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? (d.defaultValue() || 'teste') : undefined));
+  // O sistema não deve usar os pop-ups nativos do navegador (alert/confirm/prompt)
+  page.on('dialog', (d) => { erros.push('Pop-up nativo do navegador usado: ' + d.message()); d.dismiss(); });
+  // Confirma o pop-up do sistema (botão principal = último)
+  const confirmarPopup = async (nomeFoto) => {
+    await page.waitForSelector('#dialogo .dlg');
+    if (nomeFoto) await foto(nomeFoto);
+    await page.click('#dialogo .pe .btn:last-child');
+    await page.waitForSelector('#dialogo.oculto', { state: 'attached' });
+  };
   await page.exposeFunction('__api', (m, a, t) => api(m, a, t));
   const html = montarHtml();
   await page.route('http://app.local/**', (r) => r.fulfill({ contentType: 'text/html', body: html }));
   await page.goto('http://app.local/exec');
   const hash = () => page.evaluate(() => decodeURIComponent(location.hash));
   const esperarHash = (h) => page.waitForFunction((esp) => decodeURIComponent(location.hash) === esp, h);
-  const foto = async (n) => saida && page.screenshot({ path: path.join(saida, n + '.png'), fullPage: true });
+  const foto = async (n) => saida && page.screenshot({ path: path.join(saida, n + '.png') });
   const esperarCarregar = () => page.waitForFunction(() => !document.querySelector('.carregando') && document.querySelector('#ocupado').classList.contains('oculto'));
 
   await page.waitForSelector('.kpis');
@@ -96,10 +104,11 @@ function montarHtml() {
   await page.fill('[name=dataAberturaSuite]', '2026-11-10');
   await page.click('text=Salvar dados');
   await page.waitForSelector('.ok-box', { timeout: 8000 }).catch(async (e) => {
-    console.error('toast:', await page.textContent('#toast'), 'erros:', erros);
+    console.error('toast:', await page.textContent('#toasts'), 'erros:', erros);
     throw e;
   });
-  await page.click('text=Concluir etapa');
+  await page.click('[data-acao=concluir]');
+  await confirmarPopup('8-popup-concluir');
   await page.waitForFunction(() => /Elaborar DFD/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
   await esperarCarregar();
   await foto('2-etapa-dfd');
@@ -191,17 +200,20 @@ function montarHtml() {
   await page.click('[data-acao=gerarDoc]');
   await esperarCarregar();
   await page.click('[data-acao=enviarAssinatura]');
+  await confirmarPopup();
   await esperarCarregar();
   await page.waitForSelector('.assinaturas .assinante');
   for (let i = 0; i < 3; i++) {
     await page.click('[data-acao=registrarAssinatura] >> nth=0');
+    await confirmarPopup(i === 0 ? '9-popup-assinatura' : null);
     await esperarCarregar();
   }
   await page.waitForSelector('.ok-box');
   await foto('5-etp-assinado');
   await page.click('[data-acao=concluir]');
+  await confirmarPopup();
   await esperarCarregar();
-  await page.waitForFunction(() => document.querySelectorAll('.timeline .item .ico').length > 0 &&
+  await page.waitForFunction(() => document.querySelectorAll('.timeline .item .bola').length > 0 &&
     /Natureza contínua|Pesquisar Código|Pesquisa de Preço/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
 
   // Endereço inválido cai no painel
@@ -226,6 +238,7 @@ function montarHtml() {
   await page.waitForSelector('#aviso-config [data-acao=atualizarConfiguracao]');
   await foto('6-aviso-atualizacao');
   await page.click('#aviso-config [data-acao=atualizarConfiguracao]');
+  await confirmarPopup();
   await page.waitForSelector('#log-config:not(.oculto)');
   if (await page.$('#aviso-config [data-acao=atualizarConfiguracao]')) throw new Error('Aviso deveria sumir após aplicar');
   await foto('7-atualizacao-aplicada');

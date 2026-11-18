@@ -3,22 +3,47 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <?!= incluir('Estilos') ?>
 </head>
 <body>
-  <header class="topo">
-    <div class="marca">📁 <span id="app-nome">Processos de Contratação</span></div>
+  <aside class="lateral">
+    <div class="marca">
+      <div class="selo" data-ic="escudo"></div>
+      <div><b id="app-nome">CESOP</b><small>Contratações</small></div>
+    </div>
+    <div class="rotulo-menu">Principal</div>
     <nav id="menu">
-      <a href="#/painel" data-acao="ir" data-view="painel">Painel</a>
-      <a href="#/processos" data-acao="ir" data-view="processos">Processos</a>
-      <a href="#/novo-processo" data-acao="ir" data-view="novo">+ Novo processo</a>
-      <a href="#/admin" data-acao="ir" data-view="admin" id="menu-admin" class="oculto">Administração</a>
+      <a href="#/painel" data-acao="ir" data-view="painel"><span data-ic="home"></span>Painel</a>
+      <a href="#/processos" data-acao="ir" data-view="processos"><span data-ic="pasta"></span>Processos</a>
+      <a href="#/minhas-tarefas" data-acao="ir" data-view="tarefas"><span data-ic="tarefas"></span>Minhas tarefas<span class="contador oculto" id="contador-tarefas"></span></a>
+      <a href="#/novo-processo" data-acao="ir" data-view="novo"><span data-ic="mais"></span>Novo processo</a>
+      <div class="rotulo-menu oculto" id="rotulo-gestao">Gestão</div>
+      <a href="#/admin" data-acao="ir" data-view="admin" id="menu-admin" class="oculto"><span data-ic="config"></span>Administração</a>
     </nav>
-    <div class="usuario" id="usuario"></div>
-  </header>
-  <main id="app"><div class="carregando">Carregando…</div></main>
-  <div id="toast" class="toast oculto"></div>
-  <div id="ocupado" class="ocupado oculto"><div class="spinner"></div></div>
+    <div class="cartao-usuario">
+      <div class="avatar" id="avatar">··</div>
+      <div><b id="usuario">Carregando…</b><small id="usuario-papel"></small></div>
+    </div>
+  </aside>
+
+  <div class="principal">
+    <header class="topo">
+      <div class="migalhas" id="migalhas"></div>
+      <label class="busca" title="Buscar processos (Ctrl+K)">
+        <span data-ic="busca" data-tam="16"></span>
+        <input id="busca-global" placeholder="Buscar processo, nº SUITE, título…" autocomplete="off">
+        <kbd>Ctrl K</kbd>
+      </label>
+      <a class="botao-suite oculto" id="botao-suite" target="_blank" rel="noopener" title="Abrir o SUITE em nova aba">SUITE <span data-ic="externo" data-tam="14"></span></a>
+    </header>
+    <main id="app"><div class="carregando">Carregando…</div></main>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <div id="ocupado" class="ocupado oculto"><div class="ocupado-caixa"><div class="spinner"></div><span>Processando…</span></div></div>
+  <div id="dialogo" class="veu oculto"></div>
   <?!= incluir('App') ?>
 </body>
 </html>

@@ -246,6 +246,13 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   env.ctx.setup();
   const p = ateParalelo(env, 'Fluxo completo');
   assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'NATUREZA', 'PESQUISA_PRECO']);
+  // Próximas etapas exibidas no pop-up de conclusão
+  const natW = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'NATUREZA').id);
+  assert.deepStrictEqual(natW.proximas, [], 'decisão ainda não registrada');
+  const ppW = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'PESQUISA_PRECO').id);
+  assert.deepStrictEqual(ppW.proximas.map((x) => x.nome), ['Elaborar Mapa Comparativo']);
+  const ciW = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'COD_ITEM').id);
+  assert.ok(ciW.proximas[0].automatica, 'junção: continua após as paralelas');
 
   // Natureza contínua = NÃO -> vai direto para a junção, que fica aguardando
   const nat = tarefaAberta(env, p.id, 'NATUREZA');

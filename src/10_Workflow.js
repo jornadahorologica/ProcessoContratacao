@@ -169,6 +169,32 @@ var Workflow = {
     return p;
   },
 
+  /**
+   * Próximas etapas que serão abertas ao concluir a etapa (para exibir ao usuário).
+   * Atravessa as etapas automáticas (paralelo/junção) e respeita as decisões já registradas.
+   */
+  proximas: function (fluxoId, codigo, vars) {
+    var resultado = [];
+    var vistos = {};
+    var visitar = function (cod, prof) {
+      if (prof > 10) return;
+      var e = ConfigService.etapa(fluxoId, cod);
+      var validas = ConfigService.transicoesDe(fluxoId, cod).filter(function (t) { return Condicao.avaliar(t.condicao, vars); });
+      if (e.tipo === TIPO_ETAPA.DECISAO) validas = validas.slice(0, 1);
+      validas.forEach(function (t) {
+        var d = ConfigService.etapa(fluxoId, t.destino);
+        if (vistos[d.codigo]) return;
+        vistos[d.codigo] = true;
+        if (d.tipo === TIPO_ETAPA.PARALELO) visitar(d.codigo, prof + 1);
+        else if (d.tipo === TIPO_ETAPA.JUNCAO) resultado.push({ codigo: d.codigo, nome: 'Continua após as demais atividades em paralelo', automatica: true });
+        else if (d.tipo === TIPO_ETAPA.FIM) resultado.push({ codigo: d.codigo, nome: 'Encerramento do processo', automatica: true });
+        else resultado.push({ codigo: d.codigo, nome: d.nome });
+      });
+    };
+    visitar(codigo, 0);
+    return resultado;
+  },
+
   // ------------------------------------------------------------------ fase
   atualizarFase: function (processoId) {
     var proc = repo('Processos').obterOuFalhar(processoId);

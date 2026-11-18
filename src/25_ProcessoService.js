@@ -168,6 +168,7 @@ var ProcessoService = {
         status: ultima ? ultima.status : 'NAO_INICIADA',
         tarefaId: ultima ? ultima.id : '',
         prazo: ultima ? ultima.prazo : '',
+        concluidaEm: ultima ? ultima.concluidaEm : '',
         instancias: inst.length
       };
     });
@@ -244,6 +245,7 @@ var ProcessoService = {
     r.assinaturas = AssinaturaService.listar(p.id);
     r.sugestoes = r.ativa ? Campos.sugestoes(p, r.campos, vars) : {};
     if (r.ativa) {
+      r.proximas = Workflow.proximas(p.fluxoId, etapa.codigo, vars);
       r.pendencias = Workflow.pendencias(t, etapa, p);
       r.destinosDevolucao = Workflow.destinosDevolucao(t, p);
     }
