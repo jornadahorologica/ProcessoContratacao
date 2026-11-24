@@ -125,7 +125,7 @@ var SCHEMA = {
     'status', 'assinadoEm', 'registradoPor', 'registradoEm'],
   PesquisaPrecos: ['id', 'processoId', 'item', 'descricao', 'unidade', 'quantidade:n', 'fonte',
     'fornecedor', 'cnpj', 'valorUnitario:n', 'dataCotacao', 'referencia', 'considerado:b',
-    'observacao', 'criadoEm', 'criadoPor'],
+    'observacao', 'criadoEm', 'criadoPor', 'motivoDescarte'],
   Diligencias: ['id', 'processoId', 'numeroDespacho', 'origem', 'assunto', 'recebidoEm', 'prazo',
     'status', 'respondidoEm', 'documentoId', 'resposta', 'criadoEm', 'criadoPor'],
   Historico: ['id', 'processoId', 'tarefaId', 'dataHora', 'usuario', 'acao', 'detalhe']

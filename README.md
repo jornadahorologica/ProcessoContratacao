@@ -6,7 +6,7 @@ Sistema em **Google Apps Script** para conduzir os processos de contratação da
 - A **estrutura de pastas no Drive** é criada automaticamente para cada processo.
 - Cada etapa tem uma **área de trabalho** com formulário, documentos, checklist, solicitação a outro setor, decisão, cotações, mapa de preços e instrução processual.
 - **Documentos podem ser gerados a partir de modelos** Google Docs com marcadores `{{campo}}`.
-- A **pesquisa de preços** gera o **Mapa Comparativo** (média, mediana, menor preço, coeficiente de variação e sinalização de valores destoantes).
+- A **pesquisa de preços** gera o **Mapa Comparativo em planilha (Google Sheets)**, com as abas *Mapa* e *Cotações*: média, mediana, menor preço, coeficiente de variação, comparativo por fornecedor e preços destoantes destacados. Descartar um preço exige justificativa, e todas as cotações de um item usam a mesma unidade e quantidade.
 - O **checklist da instrução processual** é calculado a partir dos documentos FINAIS do processo.
 - **Diligências** e despachos têm controle próprio de prazo e resposta.
 - Há **painel** com kanban por fase, "minhas tarefas", "aguardando outro setor" e atrasos, além de **histórico/auditoria** completo.
@@ -120,7 +120,7 @@ Blocos da área de trabalho (coluna `blocos`, separados por vírgula):
 ## Documentos, timbre e assinaturas (SUITE)
 
 - **Documentos sem modelo próprio** são montados a partir dos campos da etapa, como os 13 incisos do ETP. Eles recebem o **cabeçalho e o rodapé** do Google Docs indicado em `APP.MODELO_TIMBRADO_ID`, no `00_Config.gs` (por exemplo, um documento do SGS).
-- **ETP, TR, Mapa Comparativo e Formulário de Pré-Reserva** têm estrutura obrigatória. Para eles, cadastre o modelo próprio (Google Docs com marcadores `{{campo}}`) em `cfg_DocumentosTipo.modeloId`. Um marcador sozinho num parágrafo (ex.: `{{etpNecessidade}}`) vira vários parágrafos quando o texto tem quebras de linha.
+- **ETP, TR e Formulário de Pré-Reserva** têm estrutura obrigatória (o Mapa Comparativo é gerado em planilha pelo próprio sistema). Para eles, cadastre o modelo próprio (Google Docs com marcadores `{{campo}}`) em `cfg_DocumentosTipo.modeloId`. Um marcador sozinho num parágrafo (ex.: `{{etpNecessidade}}`) vira vários parágrafos quando o texto tem quebras de linha.
 - **Quem assina cada tipo de documento** fica em `cfg_Assinaturas`. O signatário pode ser `{{responsavelTecnico}}`.
 - **Fluxo da assinatura:** Gerar documento → **Enviar para assinatura** (gera o PDF para juntar ao SUITE) → registrar cada assinatura → o documento vira **FINAL**. Um PDF já assinado e anexado ao sistema também conta como FINAL.
 - **Etapa com documento que exige assinatura:** só pode ser concluída com o documento FINAL.

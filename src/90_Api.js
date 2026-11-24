@@ -59,6 +59,7 @@ var API = {
 
   salvarCotacao: ['E', function (processoId, c) { return PesquisaPrecoService.salvar(processoId, c); }],
   removerCotacao: ['E', function (id) { PesquisaPrecoService.remover(id); return true; }],
+  considerarCotacao: ['E', function (id, considerado, motivo) { return PesquisaPrecoService.considerar(id, considerado, motivo); }],
   calcularMapa: ['L', function (processoId, metodo) { return PesquisaPrecoService.calcularMapa(processoId, metodo); }],
   gerarMapa: ['E', function (processoId, metodo, tarefaId) { return PesquisaPrecoService.gerarMapa(processoId, metodo, tarefaId); }],
 

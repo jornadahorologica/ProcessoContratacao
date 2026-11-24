@@ -45,7 +45,7 @@ function criarAmbiente(opcoes) {
         while (this.sh.dados.length <= idx) this.sh.dados.push([]);
         for (let j = 0; j < this.nc; j++) {
           const v = vals[i][j];
-          if (typeof v !== 'string') throw new Error('Repositório deve gravar apenas texto; recebido ' + typeof v);
+          if (typeof v !== 'string' && this.sh.ss.id === estado.props.DB_SPREADSHEET_ID) throw new Error('Repositório deve gravar apenas texto; recebido ' + typeof v);
           this.sh.dados[idx][this.c - 1 + j] = v;
         }
       }
@@ -54,9 +54,12 @@ function criarAmbiente(opcoes) {
     setNumberFormat() { estado.chamadas.formatos++; return this; }
     setFontWeight() { return this; }
     setBackground() { return this; }
+    setFontSize() { return this; }
+    setFontColor() { return this; }
   }
   class Sheet {
-    constructor(nome) { this.nome = nome; this.dados = []; }
+    constructor(nome, ss) { this.nome = nome; this.dados = []; this.ss = ss; }
+    setName(n) { this.nome = n; return this; }
     getName() { return this.nome; }
     getLastRow() {
       for (let i = this.dados.length - 1; i >= 0; i--) {
@@ -77,16 +80,16 @@ function criarAmbiente(opcoes) {
     setFrozenRows() {}
   }
   class Spreadsheet {
-    constructor(nome) { this.id = novoId('ss'); this.nome = nome; this.abas = [new Sheet('Sheet1')]; }
+    constructor(nome) { this.id = novoId('ss'); this.nome = nome; this.abas = [new Sheet('Sheet1', this)]; }
     getId() { return this.id; }
     getUrl() { return 'https://docs.google.com/spreadsheets/d/' + this.id; }
     getSheetByName(n) { return this.abas.find((s) => s.nome === n) || null; }
-    insertSheet(n) { const s = new Sheet(n); this.abas.push(s); return s; }
+    insertSheet(n) { const s = new Sheet(n, this); this.abas.push(s); return s; }
     getSheets() { return this.abas.slice(); }
     deleteSheet(s) { this.abas = this.abas.filter((x) => x !== s); }
   }
   const SpreadsheetApp = {
-    create(nome) { const ss = new Spreadsheet(nome); estado.planilhas[ss.id] = ss; estado.arquivos[ss.id] = new Arquivo(ss.id, nome, 'sheet'); return ss; },
+    create(nome) { const ss = new Spreadsheet(nome); estado.planilhas[ss.id] = ss; estado.arquivos[ss.id] = new Arquivo(ss.id, nome, 'application/vnd.google-apps.spreadsheet'); return ss; },
     openById(id) { const ss = estado.planilhas[id]; if (!ss) throw new Error('Planilha não encontrada'); return ss; }
   };
 

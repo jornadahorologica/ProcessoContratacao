@@ -187,14 +187,16 @@ function bCotacoes(w, ed) {
       return '<tr><td>' + esc(c.item) + (c.descricao ? '<br><span class="ajuda">' + esc(c.descricao) + '</span>' : '') + '</td><td>' + esc(c.fornecedor) +
         (c.cnpj ? '<br><span class="ajuda">' + esc(c.cnpj) + '</span>' : '') + '</td><td>' + esc(c.fonte) + '</td><td>' + dataBR(c.dataCotacao) + '</td>' +
         '<td class="num">' + esc(c.quantidade) + ' ' + esc(c.unidade) + '</td><td class="num">' + brl(c.valorUnitario) + '</td>' +
-        '<td>' + (ed ? '<input type="checkbox" data-acao="toggleCotacao" data-id="' + esc(c.id) + '"' + (c.considerado ? ' checked' : '') + '>' : (c.considerado ? 'Sim' : 'Não')) + '</td>' +
+        '<td>' + caixaConsiderar(c, ed) + '</td>' +
         '<td>' + (ed ? '<button class="btn sec peq" data-acao="removerCotacao" data-id="' + esc(c.id) + '">Excluir</button>' : '') + '</td></tr>';
     }).join('') + '</table>' : '<div class="vazio">Nenhuma cotação registrada.</div>';
   if (ed) {
     h += '<details style="margin-top:10px"' + (cot.length ? '' : ' open') + '><summary><b>+ Registrar cotação</b></summary><div id="form-cot">' +
-      '<div class="linha"><div><label>Item <span class="obrig">*</span></label><input name="item" list="lista-itens" placeholder="Mesmo nome agrupa as cotações"></div>' +
+      '<p class="ajuda">Todas as cotações de um mesmo item usam a mesma unidade e quantidade: ao escolher um item já cotado, esses campos são preenchidos.</p>' +
+      '<div class="linha"><div><label>Item <span class="obrig">*</span></label><input name="item" list="lista-itens" data-change="itemCotacao" ' +
+      'placeholder="Escolha um item já cotado ou digite um novo"></div>' +
       '<div><label>Descrição</label><input name="descricao"></div></div>' +
-      '<datalist id="lista-itens">' + Array.from(new Set(cot.map(function (c) { return c.item; }))).map(function (i) { return '<option value="' + esc(i) + '">'; }).join('') + '</datalist>' +
+      '<datalist id="lista-itens">' + Object.keys(w.itensCotados || {}).map(function (k) { return '<option value="' + esc(w.itensCotados[k].item) + '">'; }).join('') + '</datalist>' +
       '<div class="linha"><div><label>Unidade</label><input name="unidade" placeholder="UST, mês, un"></div><div><label>Quantidade</label><input type="number" name="quantidade" value="1"></div>' +
       '<div><label>Valor unitário (R$) <span class="obrig">*</span></label><input type="number" step="0.01" name="valorUnitario"></div></div>' +
       '<div class="linha"><div><label>Fonte</label><select name="fonte">' + (w.fontes || []).map(function (f) { return '<option>' + esc(f) + '</option>'; }).join('') + '</select></div>' +
@@ -205,20 +207,31 @@ function bCotacoes(w, ed) {
   return h + '</div>';
 }
 
+/** Caixa "Considerada": desmarcar pede o motivo do descarte (pop-up). */
+function caixaConsiderar(c, ed) {
+  var motivo = c.motivoDescarte ? '<div class="ajuda" title="' + esc(c.motivoDescarte) + '">Descartada: ' + esc(c.motivoDescarte) + '</div>' : '';
+  if (!ed) return (c.considerado ? 'Sim' : 'Não') + motivo;
+  return '<label class="check" style="padding:0"><input type="checkbox" data-acao="considerarCotacao" data-id="' + esc(c.id) + '"' +
+    (c.considerado ? ' checked' : '') + '>' + (c.considerado ? 'Sim' : 'Não') + '</label>' + motivo;
+}
+
 function bMapa(w, ed) {
   var m = w.mapa;
   var h = '<div class="bloco" id="bloco-mapa"><h3><span><span class="ib">' + ic('grafico', 16) + '</span>Mapa comparativo</span><span class="acoes">' +
     '<select id="mapa-metodo" data-change="metodoMapa" style="width:auto">' + Object.keys(S.ctx.metodosMapa).map(function (k) {
       return '<option value="' + k + '"' + (k === m.metodo ? ' selected' : '') + '>' + esc(S.ctx.metodosMapa[k]) + '</option>';
     }).join('') + '</select>' +
-    (ed ? '<button class="btn peq" data-acao="gerarMapa">' + ic('doc', 14) + 'Gerar documento do mapa</button>' : '') + '</span></h3>';
+    (ed ? '<button class="btn peq" data-acao="gerarMapa">' + ic('grafico', 14) + 'Gerar planilha do mapa</button>' : '') + '</span></h3>';
   if (!m.itens.length) return h + '<div class="vazio">Nenhuma cotação registrada na etapa de pesquisa de preços.</div></div>';
-  h += '<p class="ajuda">Valores com variação maior que ' + Math.round(m.limiteDesvio * 100) + '% em relação à mediana aparecem em vermelho. Desmarque-os na pesquisa de preços se forem descartados.</p>';
+  h += '<p class="ajuda">Preços com variação maior que ' + Math.round(m.limiteDesvio * 100) + '% em relação à mediana aparecem em vermelho (⚠). ' +
+    'Para descartar um preço, desmarque "Considerada" e informe o motivo — ele sai do cálculo e o motivo vai para a planilha.</p>' +
+    (w.contratacaoDireta ? '<div class="info-linha">' + ic('info', 15) + '<span>Contratação direta (ETICE): o total do mapa é registrado como referência e <b>não substitui</b> o valor estimado do processo (proposta da ETICE).</span></div>' : '');
   m.itens.forEach(function (i) {
     h += '<h3 style="margin-top:12px">' + esc(i.item) + (i.descricao ? ' — <span class="ajuda">' + esc(i.descricao) + '</span>' : '') + '</h3>' +
+      '<p class="ajuda" style="margin:-6px 0 8px">' + esc(i.quantidade) + ' ' + esc(i.unidade || '') + '</p>' +
       '<table><tr><th>Fornecedor</th><th>Fonte</th><th class="num">Valor unitário</th><th>Considerada</th></tr>' + i.cotacoes.map(function (c) {
-        return '<tr><td>' + esc(c.fornecedor) + '</td><td>' + esc(c.fonte) + '</td><td class="num ' + (c.destoante ? 'destoante' : '') + '">' + brl(c.valorUnitario) +
-          (c.destoante ? ' ⚠' : '') + '</td><td>' + (c.considerado ? 'Sim' : 'Não') + '</td></tr>';
+        return '<tr' + (c.considerado ? '' : ' style="opacity:.6"') + '><td>' + esc(c.fornecedor) + '</td><td>' + esc(c.fonte) + '</td><td class="num ' + (c.destoante && c.considerado ? 'destoante' : '') + '">' +
+          (c.considerado ? '' : '<s>') + brl(c.valorUnitario) + (c.considerado ? '' : '</s>') + (c.destoante ? ' ⚠' : '') + '</td><td>' + caixaConsiderar(c, ed) + '</td></tr>';
       }).join('') + '</table>' +
       '<table style="margin-top:6px"><tr><th>Nº</th><th class="num">Menor</th><th class="num">Média</th><th class="num">Mediana</th><th class="num">CV</th><th class="num">Unit. estimado</th><th class="num">Qtd</th><th class="num">Total</th></tr>' +
       '<tr><td>' + i.n + '</td><td class="num">' + brl(i.menor) + '</td><td class="num">' + brl(i.media) + '</td><td class="num">' + brl(i.mediana) + '</td>' +

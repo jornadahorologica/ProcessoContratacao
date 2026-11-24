@@ -216,6 +216,26 @@ function montarHtml() {
   await page.waitForFunction(() => document.querySelectorAll('.timeline .item .bola').length > 0 &&
     /Natureza contínua|Pesquisar Código|Pesquisa de Preço/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
 
+  // ---------------- Pesquisa de preço: descarte com motivo e item padronizado
+  await page.goto('http://app.local/exec#/processo/' + p2.numero + '/etapa/PESQUISA_PRECO');
+  await page.reload();
+  await page.waitForSelector('#bloco-cot [data-acao=considerarCotacao]');
+  await page.click('#bloco-cot [data-acao=considerarCotacao] >> nth=1');
+  await page.waitForSelector('#dialogo #dlg-campo');
+  await page.click('#dialogo .pe .btn:last-child'); // sem motivo: não fecha
+  if (!(await page.$('#dialogo .dlg'))) throw new Error('Descarte sem motivo não deveria ser aceito');
+  await page.fill('#dlg-campo', 'Preço fora da média do mercado');
+  await foto('10-descarte-cotacao');
+  await page.click('#dialogo .pe .btn:last-child');
+  await esperarCarregar();
+  await page.waitForSelector('#bloco-cot .ajuda:has-text("Descartada: Preço fora da média do mercado")');
+  await page.click('#bloco-cot summary:has-text("Registrar cotação")');
+  await page.fill('#form-cot [name=item]', 'ust');
+  await page.dispatchEvent('#form-cot [name=item]', 'change');
+  if (await page.inputValue('#form-cot [name=quantidade]') !== '12000' || !(await page.$eval('#form-cot [name=quantidade]', (e) => e.readOnly))) {
+    throw new Error('Item já cotado deveria preencher e travar a quantidade');
+  }
+
   // Endereço inválido cai no painel
   await page.goto('http://app.local/exec#/rota/que/nao/existe');
   await page.reload();

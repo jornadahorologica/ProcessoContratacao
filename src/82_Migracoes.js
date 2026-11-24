@@ -257,6 +257,19 @@ var Migracoes = {
           repo('cfg_Etapas').atualizar(F + '.PARECER', { descricao: 'Somente no pregão: parecer técnico sobre as propostas analisadas.' });
         }
       }
+    },
+    {
+      versao: 6,
+      descricao: 'Mapa comparativo em planilha (Google Sheets), descarte de preços com justificativa e itens padronizados',
+      aplicar: function (M) {
+        // A coluna PesquisaPrecos.motivoDescarte é criada pela verificação de estrutura (antes das migrações).
+        if (repo('cfg_Etapas').obter('CONTRATACAO.MAPA_PRECOS')) {
+          repo('cfg_Etapas').atualizar('CONTRATACAO.MAPA_PRECOS', {
+            descricao: 'Mapa comparativo gerado em planilha (Google Sheets) a partir das cotações. Preços destoantes ' +
+              'podem ser descartados aqui, com justificativa.'
+          });
+        }
+      }
     }
   ]
 };

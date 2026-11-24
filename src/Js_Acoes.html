@@ -143,10 +143,14 @@ var ACOES = {
       ok: 'Excluir', classeOk: 'perigo cheio' })
       .then(function (ok) { if (ok) acaoTela('removerCotacao', [d.id], 'Cotação excluída.'); });
   },
-  toggleCotacao: function (d, el) {
-    var c = S.tar.cotacoes.filter(function (x) { return x.id === d.id; })[0];
-    c.considerado = el.checked;
-    acaoTela('salvarCotacao', [S.procId, c]);
+  considerarCotacao: function (d, el) {
+    if (el.checked) return acaoTela('considerarCotacao', [d.id, true, ''], 'Cotação considerada no cálculo.');
+    el.checked = true; // só desmarca depois de informado o motivo
+    Dialogo.abrir({ tipo: 'aviso', icone: 'x', titulo: 'Descartar esta cotação?',
+      texto: 'Ela deixa de entrar no cálculo do mapa. O motivo fica registrado na planilha e no histórico.',
+      campo: { tipo: 'textarea', rotulo: 'Motivo do descarte', obrigatorio: true, placeholder: 'Ex.: preço 60% acima da mediana, fora da realidade de mercado' },
+      ok: 'Descartar', classeOk: 'perigo cheio' })
+      .then(function (motivo) { if (motivo) acaoTela('considerarCotacao', [d.id, false, motivo], 'Cotação descartada.'); });
   },
   gerarMapa: function () {
     acaoTela('gerarMapa', [S.procId, $('#mapa-metodo').value, S.tarefaId], 'Mapa comparativo gerado.').then(function (doc) {
@@ -228,6 +232,18 @@ var ACOES = {
 };
 
 var MUDANCAS = {
+  /** Item já cotado: preenche e trava unidade e quantidade (mesmos valores para todas as cotações do item). */
+  itemCotacao: function (el) {
+    var f = $('#form-cot');
+    var chave = String(el.value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    var item = ((S.tar && S.tar.itensCotados) || {})[chave];
+    ['unidade', 'quantidade'].forEach(function (k) {
+      var campo = $('[name=' + k + ']', f);
+      campo.readOnly = !!item;
+      if (item) campo.value = item[k] === null || item[k] === undefined ? '' : item[k];
+    });
+    if (item && !$('[name=descricao]', f).value) $('[name=descricao]', f).value = item.descricao || '';
+  },
   nsa: function (el) {
     var area = el.closest('.secao-corpo').querySelector('textarea');
     area.placeholder = el.checked ? 'Justificativa do “Não se aplica”' : 'Texto da seção';

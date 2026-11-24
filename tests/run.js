@@ -463,7 +463,8 @@ teste('Repositório: tipos (número pt-BR, booleano, JSON) e remoção', () => {
   env.novaExecucao();
   const p = env.ok('criarProcesso', { titulo: 'R', objeto: 'O' });
   assert.strictEqual(typeof p.pastas, 'object');
-  const c = env.ok('salvarCotacao', p.id, { item: 'I', valorUnitario: '1.234,56', considerado: 'false' });
+  let c = env.ok('salvarCotacao', p.id, { item: 'I', valorUnitario: '1.234,56' });
+  c = env.ok('considerarCotacao', c.id, false, 'teste');
   assert.strictEqual(c.valorUnitario, 1234.56);
   assert.strictEqual(c.considerado, false);
   env.ok('removerCotacao', c.id);
@@ -580,7 +581,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '5');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '6');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
@@ -603,11 +604,11 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
   env.ctx.ConfigService.limparCache();
   let ctx = env.ok('contexto');
-  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5]);
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6]);
   const log = env.ok('atualizarConfiguracao');
   assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
   ctx = env.ok('contexto');
-  assert.strictEqual(ctx.configuracao.versao, 5);
+  assert.strictEqual(ctx.configuracao.versao, 6);
   assert.deepStrictEqual(ctx.configuracao.pendentes, []);
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
@@ -644,6 +645,63 @@ teste('Encaminhar à CECOC: contratação direta encerra; pregão segue para an�
   const det = env.ok('detalharProcesso', p.id);
   assert.strictEqual(det.processo.status, 'CONCLUIDO');
   assert.ok(!det.tarefas.some((x) => x.etapaCodigo === 'ANALISE_PROPOSTA'), 'sem análise na contratação direta');
+});
+
+teste('Mapa comparativo: planilha, itens padronizados, descarte com motivo e contratação direta', () => {
+  const env = carregar();
+  env.ctx.setup();
+  const p = env.ok('criarProcesso', { titulo: 'Mapa', objeto: 'Licenças' });
+  const cot = (f, v, extra) => env.ok('salvarCotacao', p.id, Object.assign({ item: 'Licença Office', unidade: 'Licença', quantidade: 100, fornecedor: f, fonte: 'Marketplace', valorUnitario: v }, extra || {}));
+  const a = cot('Empresa A', 100);
+  // Mesmo item com outra grafia: agrupado; unidade e quantidade herdadas quando não informadas
+  const b = env.ok('salvarCotacao', p.id, { item: '  licença   office ', fornecedor: 'Empresa B', valorUnitario: 110, quantidade: '' });
+  assert.strictEqual(b.item, 'Licença Office');
+  assert.strictEqual(b.unidade, 'Licença');
+  assert.strictEqual(b.quantidade, 100);
+  // Unidade ou quantidade diferentes para o mesmo item: recusado
+  assert.match(env.falha('salvarCotacao', p.id, { item: 'Licença Office', unidade: 'Mês', quantidade: 100, valorUnitario: 1 }), /mesma unidade/);
+  assert.match(env.falha('salvarCotacao', p.id, { item: 'Licença Office', unidade: 'Licença', quantidade: 50, valorUnitario: 1 }), /mesma quantidade/);
+  const c = cot('Empresa C', 300);
+  cot('Suporte', 50, { item: 'Suporte técnico', unidade: 'Mês', quantidade: 12 });
+
+  let m = env.ok('calcularMapa', p.id, 'MEDIA');
+  const lic = m.itens.find((i) => i.item === 'Licença Office');
+  assert.strictEqual(lic.n, 3);
+  assert.ok(lic.cotacoes.find((x) => x.id === c.id).destoante, '300 destoa da mediana 110');
+  // Descartar exige motivo; descartado sai do cálculo
+  assert.match(env.falha('considerarCotacao', c.id, false, ''), /motivo/);
+  env.ok('considerarCotacao', c.id, false, 'Preço fora da realidade de mercado');
+  m = env.ok('calcularMapa', p.id, 'MEDIA');
+  assert.strictEqual(m.itens.find((i) => i.item === 'Licença Office').media, 105);
+  assert.strictEqual(m.total, 105 * 100 + 50 * 12);
+  assert.ok(env.ok('historicoProcesso', p.id).some((h) => h.acao === 'COTACAO_DESCARTADA' && /fora da realidade/.test(h.detalhe)));
+
+  // Planilha gerada com as abas Mapa e Cotações
+  const doc = env.ok('gerarMapa', p.id, 'MEDIA', '');
+  assert.strictEqual(doc.mimeType, 'application/vnd.google-apps.spreadsheet');
+  const ss = env.estado.planilhas[doc.fileId];
+  assert.deepStrictEqual(ss.getSheets().map((x) => x.nome), ['Mapa', 'Cotações']);
+  const mapaTxt = ss.getSheetByName('Mapa').dados.map((l) => (l || []).join('|')).join('\n');
+  assert.ok(mapaTxt.includes('VALOR TOTAL ESTIMADO|||||||||||11100'), mapaTxt);
+  assert.ok(mapaTxt.includes('Empresa C (Marketplace)'));
+  const cotTxt = ss.getSheetByName('Cotações').dados.map((l) => (l || []).join('|')).join('\n');
+  assert.ok(cotTxt.includes('Empresa C') && cotTxt.includes('Não|Sim|Preço fora da realidade de mercado'), cotTxt);
+  assert.strictEqual(env.ok('detalharProcesso', p.id).processo.valorEstimado, 11100, 'pregão: valor do processo = mapa');
+  // Assinatura: o PDF é gerado também a partir da planilha
+  env.ok('enviarParaAssinatura', doc.id);
+  assert.ok(env.ok('detalharProcesso', p.id).documentos.find((d) => d.id === doc.id).pdfUrl);
+
+  // Contratação direta: o mapa não substitui o valor estimado do processo
+  env.novaExecucao();
+  env.ctx.Variaveis.definir(p.id, 'contratadaEtice', 'SIM', 'ETP');
+  env.ctx.repo('Processos').atualizar(p.id, { valorEstimado: 9999 });
+  env.novaExecucao();
+  env.ok('considerarCotacao', c.id, true, '');
+  env.ok('gerarMapa', p.id, 'MEDIA', '');
+  const det = env.ok('detalharProcesso', p.id);
+  assert.strictEqual(det.processo.valorEstimado, 9999);
+  assert.strictEqual(Number(det.variaveis.valorMapa), (100 + 110 + 300) / 3 * 100 + 600);
+  void a; void b;
 });
 
 // ------------------------------------------------------------------ execução

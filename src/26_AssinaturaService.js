@@ -40,7 +40,7 @@ var AssinaturaService = {
     var proc = repo('Processos').obterOuFalhar(d.processoId);
 
     var pdfFileId = d.pdfFileId, pdfUrl = d.pdfUrl;
-    if (d.mimeType === 'application/vnd.google-apps.document') {
+    if (d.mimeType === 'application/vnd.google-apps.document' || d.mimeType === 'application/vnd.google-apps.spreadsheet') {
       var blob = DriveApp.getFileById(d.fileId).getAs('application/pdf').setName(d.nome + '.pdf');
       var pdf = DriveService.pastaDoTipo(proc, d.tipoCodigo).createFile(blob);
       pdfFileId = pdf.getId();

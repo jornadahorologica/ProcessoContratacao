@@ -112,7 +112,7 @@
   input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); font: inherit; background: #fff; color: var(--texto);
     transition: border-color .15s, box-shadow .15s; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--azul); box-shadow: 0 0 0 4px var(--azul-c); }
-  input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color: #475569; }
+  input:disabled, select:disabled, textarea:disabled, input[readonly] { background: #f8fafc; color: #475569; }
   textarea { min-height: 80px; resize: vertical; line-height: 1.5; }
   textarea.grande { min-height: 150px; }
   input[type=checkbox], input[type=radio] { width: 18px; height: 18px; accent-color: var(--azul); flex: none; }

@@ -252,8 +252,12 @@ var ProcessoService = {
     if (blocos.indexOf('E') >= 0) {
       r.cotacoes = PesquisaPrecoService.listar(p.id);
       r.fontes = PesquisaPrecoService.FONTES;
+      r.itensCotados = PesquisaPrecoService.itens(p.id);
     }
-    if (blocos.indexOf('M') >= 0) r.mapa = PesquisaPrecoService.calcularMapa(p.id, vars.metodoEstimativa);
+    if (blocos.indexOf('M') >= 0) {
+      r.mapa = PesquisaPrecoService.calcularMapa(p.id, vars.metodoEstimativa);
+      r.contratacaoDireta = vars.contratadaEtice === 'SIM';
+    }
     if (blocos.indexOf('I') >= 0) r.instrucao = Instrucao.verificar(p);
     return r;
   },
