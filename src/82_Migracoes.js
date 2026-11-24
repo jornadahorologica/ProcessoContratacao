@@ -223,6 +223,40 @@ var Migracoes = {
         M.ajustarCampo('CONTRATACAO', 'DFD', 'quantidadeDFD', { linha: 'DFD_QTD' });
         M.ajustarCampo('CONTRATACAO', 'DFD', 'unidadeMedidaDFD', { linha: 'DFD_QTD' });
       }
+    },
+    {
+      versao: 5,
+      descricao: 'Encaminhar à CECOC após a instrução; análise da proposta e parecer só no pregão (não na contratação direta)',
+      aplicar: function (M) {
+        var F = 'CONTRATACAO';
+        M.upsert('cfg_Etapas', {
+          id: F + '.ENVIO_CECOC', fluxoId: F, codigo: 'ENVIO_CECOC', ordem: 185, nome: 'Encaminhar à CECOC',
+          fase: 'INSTRUCAO', tipo: 'TAREFA', setor: 'CESOP', prazoDias: 30, blocos: 'D', documentoTipo: '',
+          variavelDecisao: '', opcoesDecisao: '',
+          descricao: 'Encaminhar o processo instruído à CECOC e registrar o retorno. Pregão: o retorno traz as propostas ' +
+            'técnicas e financeiras para análise. Contratação direta: o processo é encerrado no sistema.'
+        });
+        // Instrução passa a seguir para o encaminhamento à CECOC
+        repo('cfg_Transicoes').filtrar(function (t) {
+          return t.fluxoId === F && t.origem === 'INSTRUCAO' && t.destino === 'ANALISE_PROPOSTA';
+        }).forEach(function (t) { repo('cfg_Transicoes').atualizar(t.id, { destino: 'ENVIO_CECOC' }); });
+        M.upsert('cfg_Transicoes', {
+          id: F + '.T_CECOC_PREGAO', fluxoId: F, origem: 'ENVIO_CECOC', destino: 'ANALISE_PROPOSTA',
+          condicao: 'contratadaEtice != SIM', ordem: 100, rotulo: 'Pregão'
+        });
+        M.upsert('cfg_Transicoes', {
+          id: F + '.T_CECOC_DIRETA', fluxoId: F, origem: 'ENVIO_CECOC', destino: 'FIM',
+          condicao: 'contratadaEtice == SIM', ordem: 101, rotulo: 'Contratação direta'
+        });
+        if (repo('cfg_Etapas').obter(F + '.ANALISE_PROPOSTA')) {
+          repo('cfg_Etapas').atualizar(F + '.ANALISE_PROPOSTA', {
+            descricao: 'Somente no pregão: analisar as propostas técnicas e financeiras recebidas no retorno da CECOC.'
+          });
+        }
+        if (repo('cfg_Etapas').obter(F + '.PARECER')) {
+          repo('cfg_Etapas').atualizar(F + '.PARECER', { descricao: 'Somente no pregão: parecer técnico sobre as propostas analisadas.' });
+        }
+      }
     }
   ]
 };

@@ -124,7 +124,7 @@ teste('Setup cria abas, carrega configuração e administrador; é idempotente',
   const ss = Object.values(env.estado.planilhas)[0];
   Object.keys(env.ctx.SCHEMA).forEach((n) => assert.ok(ss.getSheetByName(n), 'aba ' + n));
   assert.ok(!ss.getSheetByName('Sheet1'));
-  assert.strictEqual(ss.getSheetByName('cfg_Etapas').getLastRow() - 1, env.ctx.Seed.etapas().length);
+  assert.strictEqual(ss.getSheetByName('cfg_Etapas').getLastRow() - 1, env.ctx.Seed.etapas().length + 1, 'carga inicial + ENVIO_CECOC (migração 5)');
   const linhasAntes = ss.getSheetByName('cfg_Transicoes').getLastRow();
   env.novaExecucao();
   env.ctx.setup();
@@ -331,6 +331,10 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   assert.deepStrictEqual(w.pendencias, []);
   env.ok('concluirTarefa', ins.id, '');
 
+  // Pregão (não é contratação direta): após a CECOC vêm a análise da proposta e o parecer
+  const cecoc = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'ENVIO_CECOC').id);
+  assert.deepStrictEqual(cecoc.proximas.map((x) => x.nome), ['Analisar proposta técnica e financeira']);
+  concluirSimples(env, p.id, 'ENVIO_CECOC');
   concluirSimples(env, p.id, 'ANALISE_PROPOSTA', { resultadoAnalise: 'Aprovada' });
   concluirSimples(env, p.id, 'PARECER', { conclusaoParecer: 'Favorável' }, { gerar: true });
   det = env.ok('detalharProcesso', p.id);
@@ -576,7 +580,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '4');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '5');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
@@ -599,11 +603,11 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
   env.ctx.ConfigService.limparCache();
   let ctx = env.ok('contexto');
-  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4]);
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5]);
   const log = env.ok('atualizarConfiguracao');
   assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
   ctx = env.ok('contexto');
-  assert.strictEqual(ctx.configuracao.versao, 4);
+  assert.strictEqual(ctx.configuracao.versao, 5);
   assert.deepStrictEqual(ctx.configuracao.pendentes, []);
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
@@ -615,6 +619,31 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.comoUsuario('ana@orgao.gov.br');
   assert.match(env.falha('atualizarConfiguracao'), /permissão/);
   assert.strictEqual(env.ok('contexto').configuracao, null);
+});
+
+teste('Encaminhar à CECOC: contratação direta encerra; pregão segue para análise e parecer', () => {
+  const env = carregar();
+  env.ctx.setup();
+  env.novaExecucao();
+  const prox = (vars) => JSON.parse(JSON.stringify(env.ctx.Workflow.proximas('CONTRATACAO', 'ENVIO_CECOC', vars).map((x) => x.codigo)));
+  assert.deepStrictEqual(prox({ contratadaEtice: 'SIM' }), ['FIM']);
+  assert.deepStrictEqual(prox({ contratadaEtice: 'NAO' }), ['ANALISE_PROPOSTA']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(env.ctx.Workflow.proximas('CONTRATACAO', 'INSTRUCAO', {}).map((x) => x.codigo))), ['ENVIO_CECOC']);
+
+  // Contratação direta: processo chega ao encaminhamento e, com o retorno, é encerrado
+  const p = env.ok('criarProcesso', { titulo: 'Direta', objeto: 'ETICE' });
+  env.novaExecucao();
+  env.ctx.Variaveis.definir(p.id, 'contratadaEtice', 'SIM', 'ETP');
+  env.ctx.Workflow._ativar(env.ctx.repo('Processos').obter(p.id), 'ENVIO_CECOC', '');
+  env.novaExecucao();
+  const t = tarefaAberta(env, p.id, 'ENVIO_CECOC');
+  assert.match(env.falha('concluirTarefa', t.id, ''), /envio e o retorno/);
+  env.ok('registrarEnvio', t.id, 'Despacho CESOP', '2026-11-20');
+  env.ok('registrarRetorno', t.id, 'Retorno CECOC', '2026-11-24');
+  env.ok('concluirTarefa', t.id, '');
+  const det = env.ok('detalharProcesso', p.id);
+  assert.strictEqual(det.processo.status, 'CONCLUIDO');
+  assert.ok(!det.tarefas.some((x) => x.etapaCodigo === 'ANALISE_PROPOSTA'), 'sem análise na contratação direta');
 });
 
 // ------------------------------------------------------------------ execução
