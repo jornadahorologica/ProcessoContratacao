@@ -196,7 +196,7 @@ teste('Pendências impedem concluir; campos e checklist liberam', () => {
   env.ctx.setup();
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   const t = tarefaAberta(env, p.id, 'ABRIR_SUITE');
-  assert.match(env.falha('concluirTarefa', t.id, ''), /Número do processo SUITE/);
+  assert.match(env.falha('concluirTarefa', t.id, ''), /Preencha o campo "NUP \(Número do Processo no SUITE\)"/);
   env.ok('salvarCampos', t.id, { numeroSuite: '999/2026', dataAberturaSuite: '2026-11-10', campoNaoPermitido: 'x' });
   const w = env.ok('abrirTarefa', t.id);
   assert.deepStrictEqual(w.pendencias, []);
@@ -581,7 +581,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '6');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '7');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
@@ -604,11 +604,11 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
   env.ctx.ConfigService.limparCache();
   let ctx = env.ok('contexto');
-  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6]);
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7]);
   const log = env.ok('atualizarConfiguracao');
   assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
   ctx = env.ok('contexto');
-  assert.strictEqual(ctx.configuracao.versao, 6);
+  assert.strictEqual(ctx.configuracao.versao, 7);
   assert.deepStrictEqual(ctx.configuracao.pendentes, []);
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });

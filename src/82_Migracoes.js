@@ -270,6 +270,13 @@ var Migracoes = {
           });
         }
       }
+    },
+    {
+      versao: 7,
+      descricao: 'Etapa 1: campo renomeado para "NUP (Número do Processo no SUITE)"',
+      aplicar: function (M) {
+        M.ajustarCampo('CONTRATACAO', 'ABRIR_SUITE', 'numeroSuite', { rotulo: 'NUP (Número do Processo no SUITE)' });
+      }
     }
   ]
 };
