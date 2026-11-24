@@ -10,6 +10,13 @@ $('#busca-global').addEventListener('keydown', function (ev) {
   ir('processos');
 });
 aplicarIcones(document);
+aplicarTema(document.documentElement.getAttribute('data-tema'), false);
+// Sem escolha salva, acompanha o tema do sistema operacional
+try {
+  if (!localStorage.getItem('cesop-tema') && window.matchMedia) {
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) { aplicarTema(e.matches ? 'escuro' : 'claro', false); });
+  }
+} catch (e) { /* armazenamento indisponível */ }
 
 // ------------------------------------------------------------------ início
 api('contexto').then(function (ctx) {

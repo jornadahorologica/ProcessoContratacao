@@ -3,6 +3,15 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
+  <script>
+    // Aplica o tema antes de desenhar a página (evita "piscar" em branco no modo escuro)
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('cesop-tema'); } catch (e) { /* armazenamento indisponível */ }
+      if (t !== 'claro' && t !== 'escuro') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro';
+      document.documentElement.setAttribute('data-tema', t);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <?!= incluir('Estilos') ?>
@@ -36,6 +45,10 @@
         <input id="busca-global" placeholder="Buscar processo, nº SUITE, título…" autocomplete="off">
         <kbd>Ctrl K</kbd>
       </label>
+      <div class="tema" role="group" aria-label="Tema">
+        <button type="button" data-acao="tema" data-tema="claro" title="Tema claro"><span data-ic="sol" data-tam="15"></span>Claro</button>
+        <button type="button" data-acao="tema" data-tema="escuro" title="Tema escuro"><span data-ic="lua" data-tam="15"></span>Escuro</button>
+      </div>
       <a class="botao-suite oculto" id="botao-suite" target="_blank" rel="noopener" title="Abrir o SUITE em nova aba">SUITE <span data-ic="externo" data-tam="14"></span></a>
     </header>
     <main id="app"><div class="carregando">Carregando…</div></main>

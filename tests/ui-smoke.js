@@ -251,6 +251,29 @@ function montarHtml() {
   await esperarHash('#/admin');
   void hash;
 
+  // ---------------- Tema claro/escuro
+  await page.click('.tema [data-tema=escuro]');
+  if (await page.evaluate(() => document.documentElement.dataset.tema) !== 'escuro') throw new Error('Tema escuro não aplicado');
+  await page.goto('http://app.local/exec#/painel');
+  await page.reload();
+  await page.waitForSelector('.kpis');
+  if (await page.evaluate(() => document.documentElement.dataset.tema) !== 'escuro') throw new Error('Tema escuro deveria ser lembrado');
+  if (!(await page.$('.tema [data-tema=escuro].on'))) throw new Error('Botão do tema escuro deveria estar marcado');
+  await page.waitForTimeout(300);
+  await foto('11-escuro-painel');
+  await page.goto('http://app.local/exec#/processo/' + p2.numero + '/etapa/PESQUISA_PRECO');
+  await page.reload();
+  await page.waitForSelector('#bloco-cot');
+  await page.waitForTimeout(300);
+  await foto('12-escuro-etapa');
+  await page.goto('http://app.local/exec#/processo/' + p2.numero + '/etapa/ETP');
+  await page.reload();
+  await page.waitForSelector('#bloco-form details.secao');
+  await page.waitForTimeout(300);
+  await foto('13-escuro-etp');
+  await page.click('.tema [data-tema=claro]');
+  if (await page.evaluate(() => document.documentElement.dataset.tema) !== 'claro') throw new Error('Tema claro não aplicado');
+
   // Atualização pendente da configuração: aviso + botão para o administrador
   api.estado.props.CFG_VERSAO = '2';
   await page.goto('http://app.local/exec#/admin');

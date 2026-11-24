@@ -9,6 +9,7 @@ function recarregarProcesso(msg) {
 }
 
 var ACOES = {
+  tema: function (d) { aplicarTema(d.tema, true); },
   ir: function (d) { if (d.view === 'processos') S.filtro = null; ir(d.view); },
   abrirProcesso: function (d) { abrirProcesso(d.proc, null, d.aba); },
   abrirTarefa: function (d) { abrirProcesso(d.proc, d.tarefa, 'fluxo'); },
