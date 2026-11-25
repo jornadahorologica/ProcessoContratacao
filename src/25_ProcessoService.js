@@ -255,6 +255,11 @@ var ProcessoService = {
       destinosDevolucao: []
     };
     r.assinaturas = AssinaturaService.listar(p.id);
+    if (etapa.documentoTipo) {
+      var rascunho = r.documentos.filter(function (d) { return d.tipoCodigo === etapa.documentoTipo && d.origem === 'GERADO' && d.status === 'RASCUNHO'; })
+        .sort(function (a, b) { return a.criadoEm < b.criadoEm ? 1 : -1; })[0];
+      r.documentoDesatualizado = AssinaturaService.desatualizado(rascunho, etapa.codigo);
+    }
     r.sugestoes = r.ativa ? Campos.sugestoes(p, r.campos, vars) : {};
     if (r.ativa) {
       r.proximas = Workflow.proximas(p.fluxoId, etapa.codigo, vars);
@@ -290,6 +295,7 @@ var ProcessoService = {
       if (!permitidas[k]) return;
       var v = valores[k];
       if (permitidas[k].tipo === 'nsa') v = v === true || v === 'true' ? 'true' : 'false';
+      if (Array.isArray(v)) v = v.filter(String).join('; '); // múltipla escolha
       if (permitidas[k].tipo === 'inteiro') {
         var bruto = String(v === null || v === undefined ? '' : v).replace(/[.\s]/g, '');
         if (bruto !== '' && !/^\d+$/.test(bruto)) throw Utils.erro('O campo "' + permitidas[k].rotulo + '" aceita somente números inteiros.');

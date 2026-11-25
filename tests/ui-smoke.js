@@ -206,15 +206,14 @@ function montarHtml() {
   await esperarCarregar();
   // Sem abrir aba automaticamente (seria bloqueado): aviso com botão "Abrir documento"
   await page.waitForSelector('.toast a:has-text("Abrir documento")');
-  await page.click('[data-acao=enviarAssinatura]');
-  await confirmarPopup();
+  // Assinatura em um passo: pop-up com os signatários e a data
+  await page.click('[data-acao=assinarSuite]');
+  await page.waitForSelector('#dialogo .dlg-assinante');
+  if ((await page.$$('#dialogo .dlg-assinante')).length !== 3) throw new Error('ETP deveria listar 3 signatários');
+  await confirmarPopup('9-popup-assinatura');
   await esperarCarregar();
-  await page.waitForSelector('.assinaturas .assinante');
-  for (let i = 0; i < 3; i++) {
-    await page.click('[data-acao=registrarAssinatura] >> nth=0');
-    await confirmarPopup(i === 0 ? '9-popup-assinatura' : null);
-    await esperarCarregar();
-  }
+  await page.waitForSelector('.assinaturas .assinante.ok');
+  if (await page.$('[data-acao=assinarSuite]')) throw new Error('Depois de assinado, o botão Assinar no SUITE deveria sumir');
   await page.waitForSelector('.ok-box');
   await foto('5-etp-assinado');
   await page.click('[data-acao=concluir]');

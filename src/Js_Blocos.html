@@ -47,6 +47,15 @@ function campoHtml(c, valor, ed) {
     case 'numero': case 'moeda': inp = '<input type="number" step="' + (c.tipo === 'moeda' ? '0.01' : 'any') + '" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'data': inp = '<input type="date" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'email': inp = '<input type="email" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
+    case 'multipla': {
+      var marcados = String(v).split(';').map(function (x) { return x.trim(); });
+      inp = '<div class="multipla">' + String(c.opcoes || '').split(';').filter(String).map(function (o) {
+        o = o.trim();
+        return '<label class="check"><input type="checkbox" data-multi="1" name="' + esc(c.chave) + '" value="' + esc(o) + '"' +
+          (marcados.indexOf(o) >= 0 ? ' checked' : '') + dis + '> ' + esc(o) + '</label>';
+      }).join('') + '</div>';
+      break;
+    }
     case 'simNao': c = Object.assign({}, c, { opcoes: 'SIM;NAO' }); // segue para seleção
     case 'selecao':
       inp = '<select name="' + esc(c.chave) + '"' + dis + '><option value="">— selecione —</option>' +
@@ -161,8 +170,16 @@ function formAnexo(prefixo, tipoPadrao) {
 
 function bDocumentos(w, ed) {
   var tipo = w.etapa.documentoTipo;
-  return '<div class="bloco" id="bloco-docs">' + cabBloco('doc', 'Documentos' + (tipo ? ' — ' + esc(nomeTipoDoc(tipo)) : ''),
-    ed && tipo && tipo !== 'MAPA_PRECOS' ? '<button class="btn peq" data-acao="gerarDoc" data-tipo="' + esc(tipo) + '">' + ic('editar', 14) + 'Gerar a partir do modelo</button>' : '') +
+  var assinado = w.documentos.some(function (d) { return d.tipoCodigo === tipo && d.status === 'FINAL'; });
+  var assina = ed && tipo && exigeAssinatura(tipo) && !assinado;
+  var botoes = '<span class="acoes">' +
+    (ed && tipo && tipo !== 'MAPA_PRECOS' ? '<button class="btn sec peq" data-acao="gerarDoc" data-tipo="' + esc(tipo) + '">' + ic('editar', 14) + 'Gerar a partir do modelo</button>' : '') +
+    (assina ? '<button class="btn verde peq" data-acao="assinarSuite" data-tipo="' + esc(tipo) + '">' + ic('assinar', 14) + 'Assinar no SUITE</button>' : '') + '</span>';
+  return '<div class="bloco" id="bloco-docs">' + cabBloco('doc', 'Documentos' + (tipo ? ' — ' + esc(nomeTipoDoc(tipo)) : ''), botoes) +
+    (assina ? '<div class="info-linha">' + ic('info', 15) + '<span>Depois que o documento for assinado no SUITE, clique em <b>Assinar no SUITE</b>: ' +
+      'o sistema gera o documento (se ainda não existir) e registra as assinaturas. Não é preciso anexar arquivo.</span></div>' : '') +
+    (w.documentoDesatualizado ? '<div class="info-linha aguardando">' + ic('alerta', 15) + '<span>Os dados mudaram depois que o documento foi gerado. ' +
+      'Ele será <b>gerado novamente</b> ao assinar — ou clique em "Gerar" para revisar antes.</span></div>' : '') +
     tabelaDocs(w.documentos, ed, w.assinaturas) + (ed ? formAnexo('wt', tipo) : '') + '</div>';
 }
 

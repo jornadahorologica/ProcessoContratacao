@@ -90,6 +90,7 @@ var PesquisaPrecoService = {
       dados.criadoPor = Auth.email();
       reg = r.inserir(dados);
     }
+    Variaveis.definir(processoId, 'cotacoesAlteradasEm', Utils.agora(), '');
     Historico.registrar(processoId, '', c.id ? 'COTACAO_ALTERADA' : 'COTACAO_REGISTRADA',
       dados.item + ' — ' + dados.fornecedor + ' — R$ ' + valor);
     return reg;
@@ -101,6 +102,7 @@ var PesquisaPrecoService = {
     considerado = considerado === true || considerado === 'true';
     if (!considerado && Utils.vazio(motivo)) throw Utils.erro('Informe o motivo do descarte da cotação.');
     var reg = repo('PesquisaPrecos').atualizar(id, { considerado: considerado, motivoDescarte: considerado ? '' : String(motivo).trim() });
+    Variaveis.definir(c.processoId, 'cotacoesAlteradasEm', Utils.agora(), '');
     Historico.registrar(c.processoId, '', considerado ? 'COTACAO_CONSIDERADA' : 'COTACAO_DESCARTADA',
       c.item + ' — ' + c.fornecedor + ' — R$ ' + c.valorUnitario + (considerado ? '' : ' — Motivo: ' + motivo));
     return reg;
@@ -109,6 +111,7 @@ var PesquisaPrecoService = {
   remover: function (id) {
     var c = repo('PesquisaPrecos').obterOuFalhar(id);
     repo('PesquisaPrecos').remover(id);
+    Variaveis.definir(c.processoId, 'cotacoesAlteradasEm', Utils.agora(), '');
     Historico.registrar(c.processoId, '', 'COTACAO_REMOVIDA', c.item + ' — ' + c.fornecedor);
   },
 

@@ -352,6 +352,45 @@ var Migracoes = {
         etapa('PESQUISA_PRECO', { blocos: 'E,A,B,C' });
         etapa('MAPA_PRECOS', { blocos: 'M,A,B' });
       }
+    },
+    {
+      versao: 9,
+      descricao: 'Ajustes do PO: justificativa da natureza continuada em texto único (com modelo), mapa assinado só pelo Thiago, ' +
+        'modalidade com vários parâmetros',
+      aplicar: function (M) {
+        var F = 'CONTRATACAO';
+        var etapa = function (cod, alt) { if (repo('cfg_Etapas').obter(F + '.' + cod)) repo('cfg_Etapas').atualizar(F + '.' + cod, alt); };
+
+        // --- 12) Justificativa: um único texto = documento completo (com modelo sugerido)
+        M.ajustarCampo(F, 'JUSTIFICATIVA', 'fundamentacaoContinuidade', {
+          rotulo: 'JUSTIFICATIVA DA NATUREZA CONTINUADA', tipo: 'secaoLei', opcoes: '', obrigatorio: true,
+          ajuda: 'Texto completo da justificativa. Use o modelo sugerido e complemente com a jurisprudência ou o entendimento aplicável.',
+          valorPadrao: 'Trata-se da contratação de {{objeto}}, cuja necessidade é permanente e contínua para a Administração, ' +
+            'de modo que a sua interrupção comprometeria a continuidade das atividades da unidade demandante.\n\n' +
+            'Nos termos do art. 6º, inciso XV, da Lei nº 14.133/2021, consideram-se serviços e fornecimentos contínuos aqueles ' +
+            'contratados pela Administração para a manutenção da atividade administrativa, decorrentes de necessidades permanentes ' +
+            'ou prolongadas. O art. 106 da mesma Lei admite a celebração de contratos com prazo de até 5 (cinco) anos nessas hipóteses.\n\n' +
+            '[Complementar com a jurisprudência ou o entendimento aplicável.]'
+        });
+        etapa('JUSTIFICATIVA', { descricao: 'Escreva o texto da justificativa; o documento é gerado a partir dele e assinado no SUITE ' +
+          '(botão "Assinar no SUITE"). Não é preciso anexar arquivo.' });
+
+        // --- 13) Mapa: gerado automaticamente a partir das cotações; assinatura só do Thiago (COTIC)
+        M.remover('cfg_Assinaturas', function (a) { return a.tipoDocumento === 'MAPA_PRECOS' && /secret/i.test(a.signatario); });
+        etapa('MAPA_PRECOS', { descricao: 'A planilha do mapa é gerada automaticamente com as cotações da pesquisa de preços ' +
+          '(e refeita se elas mudarem). Preços destoantes podem ser descartados aqui, com justificativa. Assinatura: COTIC.' });
+
+        // --- 14) Modalidade: vários parâmetros (art. 23, §1º)
+        M.ajustarCampo(F, 'MODALIDADE', 'modalidadePesquisa', {
+          rotulo: 'Parâmetros utilizados na pesquisa de preços', tipo: 'multipla',
+          opcoes: 'I – Painel de preços / banco de preços (ex.: Painel de Preços – Compras.gov);' +
+            'II – Contratações similares da Administração (ex.: Portal de Compras do Ceará, Portal da Transparência);' +
+            'III – Mídia especializada, tabela de referência ou sítios eletrônicos (ex.: Banco de Preços);' +
+            'IV – Pesquisa direta com fornecedores (e-mails às empresas);' +
+            'V – Base nacional de notas fiscais eletrônicas',
+          ajuda: 'Marque todos os parâmetros utilizados (Lei 14.133/2021, art. 23, §1º).'
+        });
+      }
     }
   ]
 };

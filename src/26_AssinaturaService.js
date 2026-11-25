@@ -76,6 +76,54 @@ var AssinaturaService = {
     return true;
   },
 
+  /**
+   * O documento gerado (rascunho) ficou desatualizado? Isto é: os dados da etapa
+   * (ou, no mapa, as cotações) mudaram depois que ele foi gerado.
+   */
+  desatualizado: function (doc, etapaCodigo) {
+    if (!doc || doc.status !== 'RASCUNHO' || doc.origem !== 'GERADO') return false;
+    var ignorar = { valorMapa: true, metodoEstimativa: true, cotacoesAlteradasEm: true };
+    var ultima = '';
+    repo('Variaveis').onde({ processoId: doc.processoId }).forEach(function (v) {
+      if (v.chave === 'cotacoesAlteradasEm' && doc.tipoCodigo === 'MAPA_PRECOS') { if (v.valor > ultima) ultima = v.valor; return; }
+      if (ignorar[v.chave] || /^checklist\./.test(v.chave) || !etapaCodigo || v.etapaCodigo !== etapaCodigo) return;
+      if (v.atualizadoEm > ultima) ultima = v.atualizadoEm;
+    });
+    return !!ultima && ultima > doc.criadoEm;
+  },
+
+  /**
+   * "Assinar no SUITE" em um passo: gera o documento da etapa se ainda não existir
+   * (ou se os dados mudaram), gera o PDF e registra as assinaturas marcadas.
+   * ordens = ordem dos signatários (cfg_Assinaturas) que assinaram; vazio = todos.
+   */
+  assinarNoSuite: function (processoId, tipoCodigo, tarefaId, data, ordens) {
+    if (!this.exige(tipoCodigo)) throw Utils.erro('Este tipo de documento não tem assinaturas configuradas.');
+    if (Utils.vazio(data)) throw Utils.erro('Informe a data da assinatura.');
+    var proc = repo('Processos').obterOuFalhar(processoId);
+    var tarefa = tarefaId ? repo('Tarefas').obter(tarefaId) : null;
+    var etapaCodigo = tarefa ? tarefa.etapaCodigo : '';
+    var doc = repo('Documentos').filtrar(function (d) {
+      return d.processoId === proc.id && d.tipoCodigo === tipoCodigo && d.origem === 'GERADO' && d.status !== 'FINAL';
+    }).sort(function (a, b) { return a.criadoEm < b.criadoEm ? 1 : -1; })[0];
+    if (!doc || this.desatualizado(doc, etapaCodigo)) {
+      doc = tipoCodigo === 'MAPA_PRECOS'
+        ? PesquisaPrecoService.gerarMapa(proc.id, Variaveis.mapa(proc.id).metodoEstimativa, tarefaId)
+        : DocumentoService.gerar(proc.id, tipoCodigo, tarefaId);
+    }
+    if (doc.status === 'RASCUNHO') this.enviar(doc.id);
+    var marcar = (ordens || []).map(Number);
+    var self = this;
+    var registradas = 0;
+    this.doDocumento(doc.id).forEach(function (a) {
+      if (a.status === 'ASSINADO' || (marcar.length && marcar.indexOf(Number(a.ordem)) < 0)) return;
+      self.registrar(a.id, data);
+      registradas++;
+    });
+    if (!registradas && !this.todasRegistradas(doc.id)) throw Utils.erro('Marque ao menos um signatário.');
+    return repo('Documentos').obter(doc.id);
+  },
+
   /** Usado ao marcar FINAL manualmente: documentos gerados com assinatura exigem todas registradas. */
   todasRegistradas: function (documentoId) {
     var l = this.doDocumento(documentoId);

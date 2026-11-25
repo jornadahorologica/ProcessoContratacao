@@ -78,7 +78,8 @@ var Campos = {
       return v;
     });
     if (faltou || !origens.length) return null; // sem dados de etapas anteriores, não há sugestão
-    return { valor: valor, origem: 'Preenchido anteriormente' };
+    var textoFixo = String(modelo).replace(/\{\{[^}]+\}\}/g, '').trim();
+    return { valor: valor, origem: textoFixo.length > 20 ? 'Modelo sugerido' : 'Preenchido anteriormente' };
   },
 
   /**

@@ -56,6 +56,7 @@ var API = {
   alterarStatusDocumento: ['E', function (id, status) { return DocumentoService.alterarStatus(id, status); }],
   enviarParaAssinatura: ['E', function (documentoId) { return AssinaturaService.enviar(documentoId); }],
   registrarAssinatura: ['E', function (assinaturaId, data) { return AssinaturaService.registrar(assinaturaId, data); }],
+  assinarNoSuite: ['E', function (processoId, tipo, tarefaId, data, ordens) { return AssinaturaService.assinarNoSuite(processoId, tipo, tarefaId, data, ordens); }],
 
   salvarCotacao: ['E', function (processoId, c) { return PesquisaPrecoService.salvar(processoId, c); }],
   removerCotacao: ['E', function (id) { PesquisaPrecoService.remover(id); return true; }],

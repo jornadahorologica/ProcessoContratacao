@@ -224,6 +224,11 @@ var Dialogo = {
           if (b.valor !== true) return fechar(null);
           var val = entrada.value.trim();
           if (campo.obrigatorio && !val) { entrada.classList.add('campo-destacado'); entrada.focus(); return; }
+          if (o.ler) {
+            var lido = o.ler(v, val);
+            if (lido === undefined) return; // validação do pop-up falhou: continua aberto
+            return fechar(lido);
+          }
           return fechar(val);
         }
         fechar(b.valor);
@@ -273,6 +278,7 @@ function valoresForm(raiz) {
   var v = {};
   $$('[name]', raiz).forEach(function (el) {
     if (el.type === 'radio') { if (el.checked) v[el.name] = el.value; return; }
+    if (el.dataset.multi) { v[el.name] = v[el.name] || []; if (el.checked) v[el.name].push(el.value); return; }
     if (el.type === 'checkbox') { v[el.name] = el.checked; return; }
     v[el.name] = el.value;
   });

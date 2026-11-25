@@ -148,10 +148,14 @@ var Workflow = {
       });
       var tipo = ConfigService.tipoDocumento(etapa.documentoTipo);
       var nomeTipo = tipo ? tipo.nome : etapa.documentoTipo;
-      if (!docs.length) {
+      if (AssinaturaService.exige(etapa.documentoTipo)) {
+        if (!docs.some(function (d) { return d.status === 'FINAL'; })) {
+          var quem = AssinaturaService.signatarios(proc, etapa.documentoTipo).map(function (s) { return s.signatario; }).join(', ');
+          p.push('Registre as assinaturas do documento "' + nomeTipo + '" (' + quem + '): use "Assinar no SUITE" ' +
+            '(o documento é gerado automaticamente) ou anexe o PDF já assinado');
+        }
+      } else if (!docs.length) {
         p.push('Gere ou anexe o documento: ' + nomeTipo);
-      } else if (AssinaturaService.exige(etapa.documentoTipo) && !docs.some(function (d) { return d.status === 'FINAL'; })) {
-        p.push('O documento "' + nomeTipo + '" precisa estar assinado no SUITE (registre as assinaturas ou anexe o PDF assinado)');
       }
     }
     if (blocos.indexOf('D') >= 0 && Utils.vazio(tarefa.retornoEm)) {

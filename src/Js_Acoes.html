@@ -108,6 +108,35 @@ var ACOES = {
         if (op) acaoTela('vincularDocumento', [S.procId, tipoDoc, noFluxo ? S.tarefaId : '', link, op === 'mover'], 'Documento vinculado.');
       });
   },
+  /** Assinatura em um passo: marca quem assinou no SUITE e a data; o sistema gera o documento se preciso. */
+  assinarSuite: function (d) {
+    var tipo = d.tipo;
+    var resp = S.det && S.det.processo.responsavelTecnico;
+    var signatarios = (S.ctx.assinaturasPorTipo[tipo] || []).map(function (a) {
+      return { ordem: a.ordem, nome: a.signatario === '{{responsavelTecnico}}' ? (resp || 'Responsável técnico') : a.signatario, cargo: a.cargo };
+    });
+    var lista = '<div style="width:100%"><b>Quem já assinou no SUITE?</b>' + signatarios.map(function (s) {
+      return '<label class="check"><input type="checkbox" class="dlg-assinante" value="' + esc(s.ordem) + '" checked> ' +
+        esc(s.nome) + (s.cargo ? ' <span class="ajuda">' + esc(s.cargo) + '</span>' : '') + '</label>';
+    }).join('') + '</div>';
+    Dialogo.abrir({ tipo: 'sucesso', icone: 'assinar', titulo: 'Assinar no SUITE — ' + nomeTipoDoc(tipo),
+      texto: (S.tar && S.tar.documentoDesatualizado ? 'Os dados mudaram: o documento será gerado novamente. ' : '') +
+        'O sistema gera o documento e o PDF (se ainda não existirem) e registra as assinaturas marcadas.',
+      detalhe: lista, campo: { tipo: 'date', rotulo: 'Data da assinatura', valor: hojeISO(), obrigatorio: true },
+      ok: 'Registrar assinaturas', classeOk: 'verde', iconeOk: 'check',
+      ler: function (raiz, data) {
+        var ordens = $$('.dlg-assinante', raiz).filter(function (x) { return x.checked; }).map(function (x) { return Number(x.value); });
+        if (!ordens.length) { toast('Marque ao menos um signatário.', true); return undefined; }
+        return { data: data, ordens: ordens };
+      } })
+      .then(function (r) {
+        if (!r) return;
+        acaoTela('assinarNoSuite', [S.procId, tipo, S.tarefaId, r.data, r.ordens]).then(function (doc) {
+          toast(doc.status === 'FINAL' ? 'Todas as assinaturas registradas — documento FINAL.' : 'Assinaturas registradas; ainda faltam signatários.',
+            false, 'Assinaturas no SUITE', doc.pdfUrl ? { rotulo: 'Abrir PDF', url: doc.pdfUrl } : null);
+        });
+      });
+  },
   enviarAssinatura: function (d) {
     Dialogo.abrir({ icone: 'assinar', titulo: 'Enviar para assinatura no SUITE',
       texto: 'O sistema vai gerar o PDF do documento. Junte-o ao processo no SUITE e, a cada assinatura feita lá, registre aqui.',

@@ -230,7 +230,7 @@ teste('Solicitação externa (consulta ETICE): envio → aguardando retorno → 
   const t = tarefaAberta(env, p.id, 'CONSULTA_ETICE');
   env.ok('salvarCampos', t.id, { resultadoConsultaEtice: 'Favorável' });
   const docEtice = env.ok('gerarDocumento', p.id, 'CONSULTA_ETICE', t.id);
-  assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /assinado no SUITE/);
+  assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /Registre as assinaturas do documento "Consulta prévia ETICE" \(Daniel Boyadijan\)/);
   assinarTudo(env, docEtice);
   assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /envio e o retorno/);
   env.ok('registrarEnvio', t.id, 'Ofício 10/2026', '2026-11-01');
@@ -543,7 +543,7 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   assert.ok(!texto.includes('Informações complementares'), 'campos complementares ficam dentro das seções');
 
   // Assinaturas no SUITE
-  assert.match(env.falha('concluirTarefa', t.id, ''), /assinado no SUITE/);
+  assert.match(env.falha('concluirTarefa', t.id, ''), /Registre as assinaturas do documento "ETP - Estudo Técnico Preliminar" \(Daniel Boyadijan, Thiago, Secretário\(a\)\)/);
   assert.match(env.falha('alterarStatusDocumento', doc.id, 'FINAL'), /assinado no SUITE/);
   env.ok('enviarParaAssinatura', doc.id);
   det = env.ok('detalharProcesso', p.id);
@@ -596,7 +596,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '8');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '9');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
@@ -619,11 +619,11 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
   env.ctx.ConfigService.limparCache();
   let ctx = env.ok('contexto');
-  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7, 8]);
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7, 8, 9]);
   const log = env.ok('atualizarConfiguracao');
   assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
   ctx = env.ok('contexto');
-  assert.strictEqual(ctx.configuracao.versao, 8);
+  assert.strictEqual(ctx.configuracao.versao, 9);
   assert.deepStrictEqual(ctx.configuracao.pendentes, []);
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
@@ -757,6 +757,65 @@ teste('Ajustes do PO: etapa 1 automática, acesso ao Drive, sugestões e textos 
   env.ok('salvarCotacao', p.id, { item: '=SOMA(A1)', fornecedor: '=x', valorUnitario: 1 });
   env.novaExecucao();
   assert.ok(env.ok('calcularMapa', p.id).itens.some((i) => i.item === '=SOMA(A1)'));
+});
+
+teste('Ajustes do PO 12–14: assinar no SUITE em um passo, mapa automático, justificativa e modalidade', () => {
+  const env = carregar();
+  env.ctx.setup();
+  const p = ateParalelo(env, 'PO 12-14');
+
+  // 12) Justificativa: texto único com modelo sugerido; sem anexo — "Assinar no SUITE" gera e registra
+  const nat = tarefaAberta(env, p.id, 'NATUREZA');
+  env.ok('salvarCampos', nat.id, { naturezaContinua: 'SIM' });
+  env.ok('concluirTarefa', nat.id, '');
+  const tj = tarefaAberta(env, p.id, 'JUSTIFICATIVA');
+  const wj = env.ok('abrirTarefa', tj.id);
+  assert.match(wj.sugestoes.fundamentacaoContinuidade.valor, /^Trata-se da contratação de Serviços de TI.*art\. 6º, inciso XV/s);
+  assert.strictEqual(wj.sugestoes.fundamentacaoContinuidade.origem, 'Modelo sugerido');
+  env.ok('salvarCampos', tj.id, { fundamentacaoContinuidade: wj.sugestoes.fundamentacaoContinuidade.valor + ' Jurisprudência X.' });
+  assert.match(env.ok('abrirTarefa', tj.id).pendencias.join(), /Registre as assinaturas do documento "Justificativa \(natureza continuada\)"/);
+  const docJ = env.ok('assinarNoSuite', p.id, 'JUSTIFICATIVA', tj.id, '2026-11-25', []);
+  assert.strictEqual(docJ.status, 'FINAL', 'gerado e assinado em um passo');
+  assert.ok(env.estado.docs[docJ.fileId].texto.includes('Jurisprudência X.'));
+  env.ok('concluirTarefa', tj.id, '');
+
+  // Documento desatualizado: dados mudam depois de gerar => gerado novamente ao assinar
+  concluirSimples(env, p.id, 'COD_ITEM', { codigoItem: '123 – Serviço' });
+  env.ok('salvarCotacao', p.id, { item: 'UST', unidade: 'UST', quantidade: 10, fornecedor: 'A', valorUnitario: 100 });
+  env.ok('salvarCotacao', p.id, { item: 'UST', unidade: 'UST', quantidade: 10, fornecedor: 'B', valorUnitario: 120 });
+  env.ok('salvarCotacao', p.id, { item: 'UST', unidade: 'UST', quantidade: 10, fornecedor: 'C', valorUnitario: 110 });
+  concluirSimples(env, p.id, 'PESQUISA_PRECO');
+
+  // 13) Mapa: sem gerar nada antes — "Assinar no SUITE" gera a planilha; só o Thiago assina
+  const tm = tarefaAberta(env, p.id, 'MAPA_PRECOS');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(env.ok('contexto').assinaturasPorTipo.MAPA_PRECOS.map((a) => a.signatario))), ['Thiago']);
+  const m1 = env.ok('gerarMapa', p.id, 'MEDIA', tm.id); // prévia
+  env.novaExecucao();
+  assert.strictEqual(env.ok('abrirTarefa', tm.id).documentoDesatualizado, false);
+  const cot = env.ok('calcularMapa', p.id, 'MEDIA').itens[0].cotacoes.find((c) => c.fornecedor === 'B');
+  env.ok('considerarCotacao', cot.id, false, 'Acima da média');
+  assert.strictEqual(env.ok('abrirTarefa', tm.id).documentoDesatualizado, true, 'cotação mudou depois da prévia');
+  const m2 = env.ok('assinarNoSuite', p.id, 'MAPA_PRECOS', tm.id, '2026-11-25', []);
+  assert.notStrictEqual(m2.id, m1.id, 'planilha gerada novamente');
+  assert.strictEqual(m2.status, 'FINAL');
+  assert.strictEqual(m2.versao, 2);
+  // Com o descarte, restaram 2 cotações: a justificativa passa a ser exigida no próprio Mapa
+  assert.match(env.falha('concluirTarefa', tm.id, ''), /Justificativa para menos de 3 cotações" \(itens: UST — 2\)/);
+  env.ok('salvarCampos', tm.id, { justificativaMenos3Cotacoes: 'Proposta B descartada por estar acima da média.' });
+  env.ok('concluirTarefa', tm.id, '');
+
+  // 14) Modalidade: vários parâmetros
+  const tmod = tarefaAberta(env, p.id, 'MODALIDADE');
+  const campo = env.ok('abrirTarefa', tmod.id).campos.find((c) => c.chave === 'modalidadePesquisa');
+  assert.strictEqual(campo.tipo, 'multipla');
+  const ops = campo.opcoes.split(';');
+  env.ok('salvarCampos', tmod.id, { modalidadePesquisa: [ops[0], ops[1], ops[3]] });
+  assert.strictEqual(env.ok('detalharProcesso', p.id).variaveis.modalidadePesquisa, [ops[0], ops[1], ops[3]].join('; '));
+  // Assinatura parcial: registra só um dos signatários (Daniel); documento continua em assinatura
+  const parcial = env.ok('assinarNoSuite', p.id, 'MODALIDADE_PESQUISA', tmod.id, '2026-11-25', [1]);
+  assert.strictEqual(parcial.status, 'FINAL', 'Modalidade só tem o Daniel como signatário');
+  env.ok('concluirTarefa', tmod.id, '');
+  assert.deepStrictEqual(ativas(env, p.id), ['TR']);
 });
 
 // ------------------------------------------------------------------ execução
