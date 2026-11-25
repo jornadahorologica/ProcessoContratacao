@@ -84,8 +84,8 @@ var ACOES = {
   },
 
   gerarDoc: function (d) {
-    acaoTela('gerarDocumento', [S.procId, d.tipo, S.tarefaId], 'Documento gerado. Abra-o para editar.').then(function (doc) {
-      window.open(doc.url, '_blank');
+    acaoTela('gerarDocumento', [S.procId, d.tipo, S.tarefaId]).then(function (doc) {
+      toast('Revise o texto antes de enviar para assinatura.', false, 'Documento gerado', { rotulo: 'Abrir documento', url: doc.url });
     });
   },
   anexar: function (d) {
@@ -154,8 +154,8 @@ var ACOES = {
       .then(function (motivo) { if (motivo) acaoTela('considerarCotacao', [d.id, false, motivo], 'Cotação descartada.'); });
   },
   gerarMapa: function () {
-    acaoTela('gerarMapa', [S.procId, $('#mapa-metodo').value, S.tarefaId], 'Mapa comparativo gerado.').then(function (doc) {
-      window.open(doc.url, '_blank');
+    acaoTela('gerarMapa', [S.procId, $('#mapa-metodo').value, S.tarefaId]).then(function (doc) {
+      toast('Planilha criada na pasta Orçamento.', false, 'Mapa comparativo gerado', { rotulo: 'Abrir planilha', url: doc.url });
     });
   },
 
@@ -181,9 +181,24 @@ var ACOES = {
     });
   },
   salvarUsuario: function () {
-    ocupado(api('salvarUsuario', valoresForm($('#form-usu'))), 'Usuário salvo.').then(function () {
+    ocupado(api('salvarUsuario', valoresForm($('#form-usu')))).then(function (u) {
+      var a = u.acessoDrive;
+      if (a && a.falhas.length) toast(a.falhas.slice(0, 3).join('\n'), true, 'Usuário salvo, mas sem acesso a algumas pastas do Drive');
+      else toast(a ? 'Acesso liberado às pastas de ' + a.ok + ' processo(s) no Drive.' : 'Dados atualizados.', false, 'Usuário salvo');
       return api('contexto').then(function (c) { S.ctx = c; ir('admin'); });
     });
+  },
+  concederAcessoDrive: function () {
+    Dialogo.abrir({ icone: 'pasta', titulo: 'Liberar acesso às pastas do Drive?',
+      texto: 'Todos os usuários ativos recebem acesso de edição às pastas de todos os processos. A pasta raiz (onde fica o banco de dados) não é compartilhada.',
+      ok: 'Liberar acesso' })
+      .then(function (ok) {
+        if (!ok) return;
+        ocupado(api('concederAcessoDrive')).then(function (r) {
+          if (r.falhas.length) toast(r.falhas.slice(0, 5).join('\n'), true, 'Acesso liberado, com ' + r.falhas.length + ' falha(s)');
+          else toast(r.ok + ' permissão(ões) conferida(s).', false, 'Acesso às pastas liberado');
+        });
+      });
   },
   atualizarConfiguracao: function () {
     Dialogo.abrir({ icone: 'atualizar', titulo: 'Aplicar atualizações da configuração?', texto: 'Nenhum processo ou dado é apagado.', ok: 'Aplicar' })
@@ -201,7 +216,8 @@ var ACOES = {
       if (!rot) return;
       var sec = rot.closest('details');
       if (sec) sec.open = true;
-      var entrada = (sec || rot.parentNode).querySelector('textarea, input:not([type=checkbox]), select');
+      // Campo dentro de uma seção: o rótulo é <label> (usa o campo dele); a seção em si: o texto da seção
+      var entrada = (rot.tagName === 'LABEL' ? rot.parentNode : (sec || rot.parentNode)).querySelector('textarea, input:not([type=checkbox]), select');
       if (entrada) {
         setTimeout(function () { entrada.focus({ preventScroll: true }); }, 350);
         entrada.classList.add('campo-destacado');

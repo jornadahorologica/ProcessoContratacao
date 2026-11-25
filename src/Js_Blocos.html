@@ -23,13 +23,16 @@ function secaoHtml(c, w, ed) {
   var ico = ok ? (nsa ? '<span class="ajuda">—</span>' : '<span style="color:var(--verde)">' + ic('check', 16) + '</span>') : '<span class="ponto"></span>';
   var dis = ed ? '' : ' disabled';
   return '<details class="secao' + (ok ? ' ok' : '') + '"' + (ok ? '' : ' open') + ' data-secao="' + esc(c.chave) + '">' +
-    '<summary><span class="ico">' + ico + '</span><span>' + esc(c.rotulo) + (permiteNsa(c) ? '' : ' <span class="obrig">*</span>') + '</span>' +
+    '<summary><span class="ico">' + ico + '</span><span>' + esc(c.rotulo) + (c.obrigatorio ? ' <span class="obrig">*</span>' : '') + '</span>' +
     (nsa ? ' <span class="tag RASCUNHO">Não se aplica</span>' : '') + '</summary><div class="secao-corpo">' +
     (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') +
     (permiteNsa(c) ? '<label class="check" style="font-weight:normal"><input type="checkbox" name="' + esc(c.chave) + '_nsa" data-change="nsa"' +
       (nsa ? ' checked' : '') + dis + '> Não se aplica <span class="ajuda">(art. 18, §2º — justifique abaixo)</span></label>' : '') +
     '<textarea class="grande" name="' + esc(c.chave) + '" placeholder="' + (nsa ? 'Justificativa do “Não se aplica”' : 'Texto da seção') + '"' + dis + '>' +
-    esc(v) + '</textarea>' + sugestaoHtml(c, ed) + '</div></details>';
+    esc(v) + '</textarea>' + sugestaoHtml(c, ed) +
+    w.campos.filter(function (x) { return x.secao === c.chave; }).map(function (x) {
+      return '<div class="campo-da-secao">' + campoHtml(x, w.valores[x.chave], ed) + '</div>';
+    }).join('') + '</div></details>';
 }
 
 function campoHtml(c, valor, ed) {
@@ -60,6 +63,8 @@ function campoHtml(c, valor, ed) {
 /** Renderiza os campos; consecutivos com o mesmo "linha" (cfg_Campos) ficam lado a lado. */
 function camposEmLinhas(campos, w, ed) {
   var html = '';
+  var secoes = campos.filter(function (c) { return c.tipo === 'secaoLei'; }).map(function (c) { return c.chave; });
+  campos = campos.filter(function (c) { return secoes.indexOf(c.secao) < 0; }); // os demais aparecem dentro da seção
   for (var i = 0; i < campos.length; i++) {
     var c = campos[i];
     var grupo = [c];

@@ -417,7 +417,10 @@ teste('Natureza contínua = SIM: junção espera a Justificativa', () => {
   assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'JUSTIFICATIVA', 'PESQUISA_PRECO']);
   concluirSimples(env, p.id, 'COD_ITEM', { codigoItem: '1', catalogoItem: 'SEPLAG' });
   env.ok('salvarCotacao', p.id, { item: 'X', valorUnitario: 10 });
-  concluirSimples(env, p.id, 'PESQUISA_PRECO');
+  // Só 1 cotação: exige a justificativa para menos de 3 cotações
+  const ppT = tarefaAberta(env, p.id, 'PESQUISA_PRECO');
+  assert.match(env.ok('abrirTarefa', ppT.id).pendencias.join(' | '), /Justificativa para menos de 3 cotações" \(itens: X — 1\)/);
+  concluirSimples(env, p.id, 'PESQUISA_PRECO', { justificativaMenos3Cotacoes: 'Mercado restrito: apenas um fornecedor respondeu.' });
   concluirSimples(env, p.id, 'MAPA_PRECOS');
   concluirSimples(env, p.id, 'MODALIDADE', { modalidadePesquisa: 'Notas fiscais (V)' });
   assert.deepStrictEqual(ativas(env, p.id), ['JUSTIFICATIVA'], 'TR não pode abrir antes da Justificativa');
@@ -485,15 +488,23 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
 
   const secoes = w.campos.filter((c) => c.tipo === 'secaoLei');
   assert.strictEqual(secoes.length, 13);
-  assert.deepStrictEqual(secoes.map((c) => c.rotulo.split(' – ')[0]),
-    ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII']);
-  const obrigSemNsa = secoes.filter((c) => !/NSA/.test(c.opcoes)).map((c) => c.rotulo.split(' – ')[0]);
-  assert.deepStrictEqual(obrigSemNsa, ['I', 'IV', 'VI', 'VIII', 'XIII'], 'art. 18, §2º');
+  // Ordem e numeração do documento da CESOP (1 a 13); todos obrigatórios
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(secoes.map((c) => c.chave))), ['etpNecessidade', 'etpRequisitos', 'etpLevantamentoMercado',
+    'etpSolucao', 'etpQuantidades', 'etpEstimativaValor', 'etpParcelamento', 'etpCorrelatas', 'etpPrevisaoPca', 'etpResultados',
+    'etpProvidencias', 'etpImpactosAmbientais', 'etpPosicionamento']);
+  assert.ok(secoes.every((c, i) => c.rotulo.startsWith((i + 1) + ') ') && c.obrigatorio), 'numeração 1) a 13) e todos obrigatórios');
+  assert.strictEqual(secoes[8].rotulo, '9) DEMONSTRATIVO DA PREVISÃO DA CONTRATAÇÃO');
+  const obrigSemNsa = secoes.filter((c) => !/NSA/.test(c.opcoes)).map((c) => c.rotulo.split(')')[0]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(obrigSemNsa)), ['1', '5', '6', '7', '13'], 'art. 18, §2º');
+  // Campos complementares dentro das seções
+  const sec = (ch) => w.campos.find((c) => c.chave === ch).secao;
+  assert.deepStrictEqual([sec('valorEstimadoEtp'), sec('registradoPCA'), sec('itemPCA'), sec('contratadaEtice')],
+    ['etpEstimativaValor', 'etpPrevisaoPca', 'etpPrevisaoPca', 'etpSolucao']);
   assert.ok(!w.campos.some((c) => c.chave === 'quantidadesEstimadas'), 'campo antigo removido pela migração');
 
   // Sugestões vindas do DFD
   assert.strictEqual(w.sugestoes.etpNecessidade.valor, 'Necessidade vinda do DFD');
-  assert.strictEqual(w.sugestoes.etpQuantidades.valor, '1000 UST (Unidade de Serviço Técnico)');
+  assert.strictEqual(w.sugestoes.etpQuantidades.valor, '1.000 UST', 'milhar e sigla da unidade');
   assert.ok(!w.sugestoes.valorEstimadoEtp, 'sem propostas ainda, sem sugestão de valor');
 
   // Valor da solução: licitação = média das propostas; ETICE = proposta da ETICE
@@ -513,8 +524,8 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   assert.strictEqual(det.variaveis.etpImpactosAmbientais_nsa, 'true');
   assert.strictEqual(det.variaveis.etpNecessidade_nsa, undefined, 'inciso I é obrigatório: não aceita NSA');
   const pend = env.ok('abrirTarefa', t.id).pendencias.join(' | ');
-  assert.match(pend, /Justifique o "Não se aplica" em: XII/);
-  assert.match(pend, /Preencha a seção "I – DESCRIÇÃO DA NECESSIDADE/);
+  assert.match(pend, /Justifique o "Não se aplica" em: 12\) DESCRIÇÃO DE POSSÍVEIS IMPACTOS/);
+  assert.match(pend, /Preencha a seção "1\) DESCRIÇÃO DA NECESSIDADE/);
 
   // Preenche tudo e gera o documento
   env.ok('salvarCampos', t.id, camposEtp({ contratadaEtice: 'NAO', valorEstimadoEtp: '1.500,00' }));
@@ -522,10 +533,14 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   env.ok('marcarChecklist', t.id, env.ok('abrirTarefa', t.id).checklist[0].id, true);
   const doc = env.ok('gerarDocumento', p.id, 'ETP', t.id);
   const texto = env.estado.docs[doc.fileId].texto;
-  ['ESTUDO TÉCNICO PRELIMINAR', 'I – DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', 'XIII – POSICIONAMENTO CONCLUSIVO',
+  ['ESTUDO TÉCNICO PRELIMINAR', '1) DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', '13) POSICIONAMENTO CONCLUSIVO',
+    'Valor estimado da contratação (R$): R$', 'Registrado no PCA?: Sim',
     'Não se aplica. Justificativa: Serviço de TI sem impacto ambiental relevante', 'R$', 'Daniel Boyadijan', 'Thiago', 'SECEX-PGI',
     'SUITE nº 777/2026'].forEach((trecho) => assert.ok(texto.includes(trecho), 'documento deveria conter: ' + trecho));
-  assert.ok(texto.indexOf('I – DESCRIÇÃO') < texto.indexOf('II – DEMONSTRATIVO'), 'ordem dos incisos');
+  assert.ok(texto.indexOf('1) DESCRIÇÃO') < texto.indexOf('2) DESCRIÇÃO DOS REQUISITOS'), 'ordem dos itens');
+  assert.ok(texto.indexOf('6) ESTIMATIVA DO VALOR') < texto.indexOf('Valor estimado da contratação (R$):') &&
+    texto.indexOf('Valor estimado da contratação (R$):') < texto.indexOf('7) JUSTIFICATIVAS'), 'valor dentro do item 6');
+  assert.ok(!texto.includes('Informações complementares'), 'campos complementares ficam dentro das seções');
 
   // Assinaturas no SUITE
   assert.match(env.falha('concluirTarefa', t.id, ''), /assinado no SUITE/);
@@ -581,7 +596,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '7');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '8');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
@@ -604,11 +619,11 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
   env.ctx.ConfigService.limparCache();
   let ctx = env.ok('contexto');
-  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7]);
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7, 8]);
   const log = env.ok('atualizarConfiguracao');
   assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
   ctx = env.ok('contexto');
-  assert.strictEqual(ctx.configuracao.versao, 7);
+  assert.strictEqual(ctx.configuracao.versao, 8);
   assert.deepStrictEqual(ctx.configuracao.pendentes, []);
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
@@ -702,6 +717,46 @@ teste('Mapa comparativo: planilha, itens padronizados, descarte com motivo e con
   assert.strictEqual(det.processo.valorEstimado, 9999);
   assert.strictEqual(Number(det.variaveis.valorMapa), (100 + 110 + 300) / 3 * 100 + 600);
   void a; void b;
+});
+
+teste('Ajustes do PO: etapa 1 automática, acesso ao Drive, sugestões e textos com "="', () => {
+  const env = carregar();
+  env.ctx.setup();
+  // Item 4: NUP + data na criação => etapa 1 concluída automaticamente
+  const p = env.ok('criarProcesso', { titulo: 'Auto', objeto: 'O', numeroSuite: '123/2026', dataAberturaSuite: '2026-11-20' });
+  assert.deepStrictEqual(ativas(env, p.id), ['DFD']);
+  assert.ok(env.ok('detalharProcesso', p.id).tarefas.find((t) => t.etapaCodigo === 'ABRIR_SUITE').observacao.includes('automaticamente'));
+  const p2 = env.ok('criarProcesso', { titulo: 'Sem data', objeto: 'O', numeroSuite: '124/2026' });
+  assert.deepStrictEqual(ativas(env, p2.id), ['ABRIR_SUITE'], 'só o NUP: etapa 1 continua aberta');
+  // Item 5: DFD sem data pretendida
+  assert.ok(!env.ok('abrirTarefa', tarefaAberta(env, p.id, 'DFD').id).campos.some((c) => c.chave === 'previsaoInicio'));
+
+  // Item 3: acesso às pastas dos processos (não à raiz)
+  const pasta = (proc) => env.estado.pastas[env.ok('detalharProcesso', proc.id).processo.pastaId];
+  assert.ok(pasta(p).editores.has('admin@orgao.gov.br'), 'usuários ativos recebem acesso à pasta do novo processo');
+  const u = env.ok('salvarUsuario', { email: 'nova@orgao.gov.br', nome: 'Nova', papel: 'ANALISTA' });
+  assert.strictEqual(u.acessoDrive.ok, 2, 'novo usuário recebe acesso às pastas dos 2 processos');
+  assert.ok(pasta(p).editores.has('nova@orgao.gov.br') && pasta(p2).editores.has('nova@orgao.gov.br'));
+  const raiz = env.estado.pastas[env.estado.props.ROOT_FOLDER_ID];
+  assert.ok(!raiz.editores || !raiz.editores.has('nova@orgao.gov.br'), 'a pasta raiz (com o banco de dados) não é compartilhada');
+  env.ok('salvarUsuario', { email: 'nova@orgao.gov.br', nome: 'Nova', papel: 'ANALISTA', ativo: false });
+  assert.ok(!pasta(p).editores.has('nova@orgao.gov.br'), 'usuário desativado perde o acesso');
+  assert.strictEqual(env.ok('concederAcessoDrive').falhas.length, 0);
+
+  // Item 1: marcador antigo "=VALOR_SOLUCAO" (virava fórmula) e célula com erro não geram "R$ NaN"
+  env.novaExecucao();
+  const S = env.ctx;
+  const campos = [{ chave: 'v', tipo: 'moeda', valorPadrao: '#NAME?' }, { chave: 'w', tipo: 'moeda', valorPadrao: '=VALOR_SOLUCAO' },
+    { chave: 'x', tipo: 'moeda', valorPadrao: 'texto' }];
+  const sug = JSON.parse(JSON.stringify(S.Campos.sugestoes(S.repo('Processos').obter(p.id), campos, {})));
+  assert.deepStrictEqual(sug, {}, 'sem dados: nenhuma sugestão inválida');
+  const etp = S.ConfigService.campos('CONTRATACAO', 'ETP').find((c) => c.chave === 'valorEstimadoEtp');
+  assert.strictEqual(etp.valorPadrao, '[VALOR_SOLUCAO]', 'gravado sem "=" (lido de volta da planilha)');
+
+  // Gravação de texto começando com "=" não vira fórmula
+  env.ok('salvarCotacao', p.id, { item: '=SOMA(A1)', fornecedor: '=x', valorUnitario: 1 });
+  env.novaExecucao();
+  assert.ok(env.ok('calcularMapa', p.id).itens.some((i) => i.item === '=SOMA(A1)'));
 });
 
 // ------------------------------------------------------------------ execução

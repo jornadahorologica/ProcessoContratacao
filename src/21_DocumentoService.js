@@ -77,8 +77,8 @@ var DocumentoService = {
       }
       this._escreverEstrutura(doc.getBody(), proc, tipo);
     }
-    doc.saveAndClose();
     var fileId = doc.getId();
+    doc.saveAndClose();
     var arquivo = DriveApp.getFileById(fileId);
     var tarefa = tarefaId ? repo('Tarefas').obter(tarefaId) : null;
     var reg = repo('Documentos').inserir({
@@ -117,12 +117,18 @@ var DocumentoService = {
       campos = campos.concat(ConfigService.campos(proc.fluxoId, e.codigo));
     });
     var secoes = campos.filter(function (c) { return c.tipo === 'secaoLei'; });
-    var outros = campos.filter(function (c) { return c.tipo !== 'secaoLei'; });
+    var chavesSecoes = secoes.map(function (c) { return c.chave; });
+    var outros = campos.filter(function (c) { return c.tipo !== 'secaoLei' && chavesSecoes.indexOf(c.secao) < 0; });
 
     secoes.forEach(function (c) {
       corpo.appendParagraph(c.rotulo).setHeading(H.HEADING2);
       Campos.textoDocumento(c, vars).split(/\r?\n/).forEach(function (linha) {
         corpo.appendParagraph(linha).setAlignment(DocumentApp.HorizontalAlignment.JUSTIFY);
+      });
+      // Campos complementares desta seção (ex.: valor estimado, registro no PCA)
+      campos.filter(function (x) { return x.secao === c.chave && !Utils.vazio(vars[x.chave]); }).forEach(function (x) {
+        var p = corpo.appendParagraph(x.rotulo.replace(/\s*\*$/, '') + ': ' + Campos.textoDocumento(x, vars));
+        p.editAsText().setBold(0, x.rotulo.length, true);
       });
     });
 

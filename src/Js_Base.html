@@ -152,20 +152,24 @@ function opcoesTiposDoc(sel) {
     return '<option value="' + esc(t.codigo) + '"' + (t.codigo === sel ? ' selected' : '') + '>' + esc(t.nome) + '</option>';
   }).join('');
 }
-/** Aviso no canto superior direito. toast(mensagem, erro?, título?) */
-function toast(msg, erro, titulo) {
+/**
+ * Aviso no canto superior direito. toast(mensagem, erro?, título?, link?)
+ * link = {rotulo, url}: botão que abre o endereço em nova aba (clique do usuário: não é bloqueado).
+ */
+function toast(msg, erro, titulo, link) {
   var el = document.createElement('div');
   el.className = 'toast' + (erro ? ' erro' : '');
   el.setAttribute('role', erro ? 'alert' : 'status');
   el.innerHTML = '<div class="ib">' + ic(erro ? 'alerta' : 'check', 16) + '</div><div><b>' + esc(titulo || (erro ? 'Não foi possível concluir' : msg)) + '</b>' +
-    (titulo || erro ? '<span class="m">' + esc(msg) + '</span>' : '') + '</div>';
+    (titulo || erro ? '<span class="m">' + esc(msg) + '</span>' : '') +
+    (link ? '<div style="margin-top:8px"><a class="btn peq" href="' + esc(link.url) + '" target="_blank" rel="noopener">' + ic('externo', 13) + esc(link.rotulo) + '</a></div>' : '') + '</div>';
   var pilha = $('#toasts');
   pilha.appendChild(el);
   while (pilha.children.length > 3) pilha.removeChild(pilha.firstChild); // no máximo 3 avisos visíveis
   setTimeout(function () {
     el.classList.add('saindo');
     setTimeout(function () { el.remove(); }, 260);
-  }, erro ? 8000 : 3500);
+  }, erro ? 8000 : link ? 12000 : 3500);
 }
 function ocupado(promessa, msgOk) {
   $('#ocupado').classList.remove('oculto');

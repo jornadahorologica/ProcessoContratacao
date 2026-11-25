@@ -161,6 +161,13 @@ var Workflow = {
       var n = repo('PesquisaPrecos').filtrar(function (c) { return c.processoId === proc.id && c.considerado; }).length;
       if (!n) p.push('Registre ao menos uma cotação considerada na pesquisa de preços');
     }
+    if ((blocos.indexOf('E') >= 0 || blocos.indexOf('M') >= 0) && Utils.vazio(vars.justificativaMenos3Cotacoes)) {
+      var poucos = PesquisaPrecoService.calcularMapa(proc.id).itens.filter(function (i) { return i.n > 0 && i.n < 3; });
+      if (poucos.length) {
+        p.push('Preencha o campo "Justificativa para menos de 3 cotações" (itens: ' +
+          poucos.map(function (i) { return i.item + ' — ' + i.n; }).join('; ') + ')');
+      }
+    }
     if (blocos.indexOf('I') >= 0) {
       Instrucao.verificar(proc).forEach(function (i) {
         if (i.exigido && !i.ok) p.push('Documento obrigatório da instrução: ' + i.nome + (i.qtd ? ' (marque como FINAL)' : ''));

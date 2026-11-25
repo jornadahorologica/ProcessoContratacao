@@ -45,6 +45,8 @@ function vAdmin() {
       '<p class="acoes"><a class="btn sec" target="_blank" href="' + esc(S.ctx.dbUrl) + '">Abrir planilha (banco de dados)</a>' +
       '<a class="btn sec" target="_blank" href="' + esc(S.ctx.pastaRaizUrl) + '">Abrir pasta raiz</a></p>' +
       '<p>Depois de editar a configuração, clique em:</p><button class="btn" data-acao="recarregarConfig">' + ic('atualizar', 15) + 'Recarregar configuração</button>' +
+      '<p style="margin-top:18px">Acesso dos usuários às pastas dos processos no Drive (concedido automaticamente ao cadastrar/ativar usuários e ao criar processos):</p>' +
+      '<button class="btn sec" data-acao="concederAcessoDrive">' + ic('pasta', 15) + 'Liberar acesso de todos às pastas</button>' +
       '<p class="ajuda">Versão ' + esc(S.ctx.versao) + '</p></div>' + cartaoAtualizacoes() + '</div>');
   });
 }

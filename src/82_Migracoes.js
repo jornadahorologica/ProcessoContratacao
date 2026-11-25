@@ -137,7 +137,7 @@ var Migracoes = {
             });
             campo('VALOR', 'valorEstimadoEtp', 'Valor estimado da contratação (R$)', 'moeda', true, '',
               'Valor da solução escolhida. O sistema sugere o valor a partir das propostas registradas na pesquisa de preços.',
-              '=VALOR_SOLUCAO');
+              '[VALOR_SOLUCAO]');
           }
         });
 
@@ -276,6 +276,81 @@ var Migracoes = {
       descricao: 'Etapa 1: campo renomeado para "NUP (Número do Processo no SUITE)"',
       aplicar: function (M) {
         M.ajustarCampo('CONTRATACAO', 'ABRIR_SUITE', 'numeroSuite', { rotulo: 'NUP (Número do Processo no SUITE)' });
+      }
+    },
+    {
+      versao: 8,
+      descricao: 'Ajustes do PO: ETP na numeração 1 a 13 (todos obrigatórios), campos dentro das seções, sugestões corrigidas, ' +
+        'DFD sem data pretendida, Código do item só SEPLAG e justificativa para menos de 3 cotações',
+      aplicar: function (M) {
+        var F = 'CONTRATACAO';
+        var remover = function (etapa, chaves) {
+          M.remover('cfg_Campos', function (c) { return c.fluxoId === F && c.etapaCodigo === etapa && chaves.indexOf(c.chave) >= 0; });
+        };
+        var etapa = function (cod, alt) { if (repo('cfg_Etapas').obter(F + '.' + cod)) repo('cfg_Etapas').atualizar(F + '.' + cod, alt); };
+
+        // --- DFD: sem "Data pretendida para a contratação"
+        remover('DFD', ['previsaoInicio']);
+
+        // --- ETP: ordem e numeração do documento da CESOP (1 a 13); todos obrigatórios
+        //     "Não se aplica" (com justificativa) só onde a Lei permite dispensar (art. 18, §2º)
+        var itens = [
+          ['etpNecessidade', 'DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', false],
+          ['etpRequisitos', 'DESCRIÇÃO DOS REQUISITOS DA CONTRATAÇÃO NECESSÁRIOS E SUFICIENTES À ESCOLHA DA SOLUÇÃO', true],
+          ['etpLevantamentoMercado', 'LEVANTAMENTO DE MERCADO', true],
+          ['etpSolucao', 'DESCRIÇÃO DA SOLUÇÃO COMO UM TODO', true],
+          ['etpQuantidades', 'ESTIMATIVA DAS QUANTIDADES A SEREM CONTRATADAS', false],
+          ['etpEstimativaValor', 'ESTIMATIVA DO VALOR DA CONTRATAÇÃO', false],
+          ['etpParcelamento', 'JUSTIFICATIVAS PARA O PARCELAMENTO OU NÃO DA SOLUÇÃO', false],
+          ['etpCorrelatas', 'CONTRATAÇÕES CORRELATAS E/OU INTERDEPENDENTES', true],
+          ['etpPrevisaoPca', 'DEMONSTRATIVO DA PREVISÃO DA CONTRATAÇÃO', true],
+          ['etpResultados', 'DEMONSTRATIVO DOS RESULTADOS PRETENDIDOS', true],
+          ['etpProvidencias', 'PROVIDÊNCIAS A SEREM ADOTADAS PREVIAMENTE À CELEBRAÇÃO DO CONTRATO', true],
+          ['etpImpactosAmbientais', 'DESCRIÇÃO DE POSSÍVEIS IMPACTOS AMBIENTAIS E RESPECTIVAS MEDIDAS MITIGADORAS', true],
+          ['etpPosicionamento', 'POSICIONAMENTO CONCLUSIVO SOBRE A ADEQUAÇÃO DA CONTRATAÇÃO PARA O ATENDIMENTO DA NECESSIDADE A QUE SE DESTINA', false]
+        ];
+        // Campos complementares que passam a ficar DENTRO de uma seção
+        var dentro = {
+          etpSolucao: ['contratadaEtice'],
+          etpEstimativaValor: ['valorEstimadoEtp'],
+          etpPrevisaoPca: ['registradoPCA', 'itemPCA']
+        };
+        var ordem = 400;
+        itens.forEach(function (it, n) {
+          M.ajustarCampo(F, 'ETP', it[0], { rotulo: (n + 1) + ') ' + it[1], obrigatorio: true, opcoes: it[2] ? 'NSA' : '', ordem: ordem++ });
+          (dentro[it[0]] || []).forEach(function (chave) { M.ajustarCampo(F, 'ETP', chave, { secao: it[0], ordem: ordem++ }); });
+        });
+        M.ajustarCampo(F, 'ETP', 'etpQuantidades', { valorPadrao: '{{quantidadeDFD|milhar}} {{unidadeMedidaDFD|sigla}}' });
+        M.ajustarCampo(F, 'ETP', 'valorEstimadoEtp', { valorPadrao: '[VALOR_SOLUCAO]' }); // sem "=" (o Sheets tratava como fórmula)
+        etapa('ETP', {
+          descricao: 'Estudo Técnico Preliminar (Lei 14.133/2021, art. 18). Todos os itens devem ser preenchidos. Nos itens ' +
+            'dispensáveis é possível marcar "Não se aplica", com justificativa; os itens 1, 5, 6, 7 e 13 são sempre obrigatórios.'
+        });
+
+        // --- Código do item: somente o Catálogo SEPLAG; vários itens (um por linha)
+        remover('COD_ITEM', ['catalogoItem', 'descricaoItem']);
+        M.ajustarCampo(F, 'COD_ITEM', 'codigoItem', {
+          rotulo: 'Itens e códigos no Catálogo SEPLAG', tipo: 'textoLongo',
+          ajuda: 'Um item por linha, no formato "código – descrição". Anexe o registro (PDF) do catálogo com o código de cada item.'
+        });
+        etapa('COD_ITEM', { descricao: 'Pesquisar cada item da contratação no Catálogo de itens da SEPLAG e registrar o código.' });
+
+        // --- Pesquisa de preço e Mapa: justificativa para menos de 3 cotações
+        M.remover('cfg_ChecklistItens', function (i) {
+          return i.fluxoId === F && i.etapaCodigo === 'PESQUISA_PRECO' && /3 cotações/.test(i.descricao);
+        });
+        var justif = function (cod, id) {
+          M.upsert('cfg_Campos', {
+            id: F + '.' + cod + '.' + id, fluxoId: F, etapaCodigo: cod, chave: 'justificativaMenos3Cotacoes',
+            rotulo: 'Justificativa para menos de 3 cotações', tipo: 'textoLongo', obrigatorio: false, opcoes: '',
+            ajuda: 'Obrigatória quando algum item tiver menos de 3 cotações consideradas. Vai para a planilha do mapa.',
+            ordem: 500, valorPadrao: '', linha: '', secao: ''
+          });
+        };
+        justif('PESQUISA_PRECO', 'JUSTIF3');
+        justif('MAPA_PRECOS', 'JUSTIF3');
+        etapa('PESQUISA_PRECO', { blocos: 'E,A,B,C' });
+        etapa('MAPA_PRECOS', { blocos: 'M,A,B' });
       }
     }
   ]

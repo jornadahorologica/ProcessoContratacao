@@ -333,6 +333,11 @@ Repo.prototype._gravarInclusoesApi = function () {
 };
 
 /** Caminho sem o serviço avançado: um bloco para as inclusões e um por grupo de alterações. */
+/** Pelo SpreadsheetApp, texto começando com "=" vira fórmula: o apóstrofo força texto (não é gravado). */
+function textoSeguro_(linha) {
+  return linha.map(function (v) { return typeof v === 'string' && /^[=+]/.test(v) ? "'" + v : v; });
+}
+
 Repo.prototype._gravarSpreadsheetApp = function () {
   var self = this;
   var sh = Db.aba(this.nome);
@@ -342,13 +347,13 @@ Repo.prototype._gravarSpreadsheetApp = function () {
     var precisa = inicio + this._novos.length - 1 - sh.getMaxRows();
     if (precisa > 0) sh.insertRowsAfter(sh.getMaxRows(), precisa);
     sh.getRange(inicio, 1, this._novos.length, n).setNumberFormat('@')
-      .setValues(this._novos.map(function (o) { return self._linhaPlanilha(o); }));
+      .setValues(this._novos.map(function (o) { return textoSeguro_(self._linhaPlanilha(o)); }));
     if (this._indice) this._novos.forEach(function (o, i) { self._indice[o[self.chave]] = inicio + i; });
     this._ultimaLinha = inicio + this._novos.length - 1;
     this._novos = [];
   }
   this._intervalosAlterados().forEach(function (d) {
-    sh.getRange(d.inicio, 1, d.fim - d.inicio + 1, n).setValues(d.values);
+    sh.getRange(d.inicio, 1, d.fim - d.inicio + 1, n).setValues(d.values.map(textoSeguro_));
   });
   this._sujos = {};
 };

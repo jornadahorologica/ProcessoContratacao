@@ -260,6 +260,10 @@ var PesquisaPrecoService = {
     });
     abaMapa.getRange(lm + 2 + mapa.itens.length, 1, 1, 1)
       .setValues([['Legenda: vermelho = destoante (considerado); cinza = descartado (não entra no cálculo).']]);
+    var justif = Variaveis.mapa(proc.id).justificativaMenos3Cotacoes;
+    if (justif) {
+      abaMapa.getRange(lm + 4 + mapa.itens.length, 1, 1, 1).setValues([['Justificativa para menos de 3 cotações: ' + justif]]);
+    }
     abaMapa.setFrozenRows(0);
 
     // ---------------- Aba Cotações

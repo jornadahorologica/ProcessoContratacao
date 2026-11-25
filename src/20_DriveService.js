@@ -44,6 +44,40 @@ var DriveService = {
     return pasta.createFile(blob);
   },
 
+  /**
+   * Dá acesso de edição às pastas dos processos (os documentos herdam). A pasta
+   * raiz NÃO é compartilhada, porque nela fica a planilha do banco de dados.
+   * Retorna {ok, falhas[]} — falhas (ex.: e-mail de fora do domínio) não interrompem.
+   */
+  compartilhar: function (pastaIds, emails) {
+    var falhas = [];
+    var ok = 0;
+    pastaIds.filter(Boolean).forEach(function (id) {
+      var pasta;
+      try { pasta = DriveApp.getFolderById(id); } catch (e) { falhas.push(id + ': pasta não encontrada'); return; }
+      emails.filter(Boolean).forEach(function (email) {
+        try { pasta.addEditor(email); ok++; } catch (e) { falhas.push(email + ': ' + e.message); }
+      });
+    });
+    return { ok: ok, falhas: falhas };
+  },
+
+  /** Remove o acesso (usuário desativado). */
+  descompartilhar: function (pastaIds, email) {
+    pastaIds.filter(Boolean).forEach(function (id) {
+      try { DriveApp.getFolderById(id).removeEditor(email); } catch (e) { /* já sem acesso */ }
+    });
+  },
+
+  emailsAtivos: function () {
+    return ConfigService.usuarios().filter(function (u) { return u.ativo; })
+      .map(function (u) { return String(u.email).trim().toLowerCase(); });
+  },
+
+  pastasDosProcessos: function () {
+    return repo('Processos').todos().map(function (p) { return p.pastaId; }).filter(Boolean);
+  },
+
   mover: function (fileId, pasta) {
     DriveApp.getFileById(fileId).moveTo(pasta);
   },

@@ -44,8 +44,11 @@ function criarAmbiente(opcoes) {
         const idx = this.r - 1 + i;
         while (this.sh.dados.length <= idx) this.sh.dados.push([]);
         for (let j = 0; j < this.nc; j++) {
-          const v = vals[i][j];
+          let v = vals[i][j];
           if (typeof v !== 'string' && this.sh.ss.id === estado.props.DB_SPREADSHEET_ID) throw new Error('Repositório deve gravar apenas texto; recebido ' + typeof v);
+          // Como no Sheets real: "=..." vira fórmula (aqui, erro #NAME?); apóstrofo inicial força texto e não é gravado
+          if (typeof v === 'string' && v[0] === "'") v = v.slice(1);
+          else if (typeof v === 'string' && v[0] === '=') v = '#NAME?';
           this.sh.dados[idx][this.c - 1 + j] = v;
         }
       }
@@ -121,6 +124,8 @@ function criarAmbiente(opcoes) {
     getName() { return this.nome; }
     getUrl() { return 'https://drive.google.com/drive/folders/' + this.id; }
     createFolder(nome) { return new Pasta(nome, this.id); }
+    addEditor(email) { if (!/@/.test(email)) throw new Error('E-mail inválido'); (this.editores = this.editores || new Set()).add(email); return this; }
+    removeEditor(email) { (this.editores = this.editores || new Set()).delete(email); return this; }
     createFile(blob) { const id = novoId('f'); const a = new Arquivo(id, blob.nome, blob.mime, this.id); estado.arquivos[id] = a; return a; }
     filhas() { return Object.values(estado.pastas).filter((p) => p.pai === this.id); }
   }

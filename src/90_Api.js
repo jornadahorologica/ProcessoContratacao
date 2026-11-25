@@ -73,9 +73,17 @@ var API = {
     if (!PAPEIS[u.papel]) throw Utils.erro('Papel inválido.');
     var dados = { nome: u.nome || '', setor: u.setor || '', papel: u.papel, ativo: u.ativo !== false };
     var r = repo('cfg_Usuarios');
-    var reg = r.obter(email) ? r.atualizar(email, dados) : r.inserir(Object.assign({ email: email }, dados));
+    var antes = r.obter(email);
+    var reg = antes ? r.atualizar(email, dados) : r.inserir(Object.assign({ email: email }, dados));
     ConfigService.limparCache();
+    // Acesso às pastas dos processos no Drive
+    var pastas = DriveService.pastasDosProcessos();
+    if (dados.ativo && (!antes || !antes.ativo)) reg.acessoDrive = DriveService.compartilhar(pastas, [email]);
+    if (!dados.ativo && antes && antes.ativo) DriveService.descompartilhar(pastas, email);
     return reg;
+  }],
+  concederAcessoDrive: ['A', function () {
+    return DriveService.compartilhar(DriveService.pastasDosProcessos(), DriveService.emailsAtivos());
   }],
   recarregarConfig: ['A', function () { ConfigService.limparCache(); return true; }],
   situacaoConfiguracao: ['A', function () { return Migracoes.situacao(); }],
@@ -87,7 +95,7 @@ var NIVEIS_ESCRITA = { E: true, G: true, A: true };
 /** Abas lidas numa única chamada no início de cada operação (com o serviço avançado). */
 var TABELAS_OPERACAO = ['Processos', 'Tarefas', 'Variaveis', 'Documentos', 'Assinaturas', 'PesquisaPrecos', 'Diligencias'];
 var SEM_PRECARGA = { contexto: true, recarregarConfig: true, situacaoConfiguracao: true, atualizarConfiguracao: true,
-  listarUsuarios: true, salvarUsuario: true, historicoProcesso: true };
+  listarUsuarios: true, salvarUsuario: true, historicoProcesso: true, concederAcessoDrive: true };
 
 /**
  * Ponto de entrada único do front-end. Retorna JSON (string) no formato

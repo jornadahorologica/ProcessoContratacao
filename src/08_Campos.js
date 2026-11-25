@@ -6,8 +6,10 @@
  *    na variável "<chave>_nsa" = "true".
  *  - valorPadrao: sugestão exibida ao usuário (ele decide se usa):
  *      "{{variavel}}"   copia uma variável já preenchida (ex.: do DFD);
- *      "=VALOR_SOLUCAO" valor da solução escolhida (proposta da ETICE ou
- *                       média das propostas recebidas).
+ *      "[VALOR_SOLUCAO]" valor da solução escolhida (proposta da ETICE ou
+ *                       média das propostas recebidas);
+ *      filtros: {{quantidadeDFD|milhar}} (1.000) e {{unidadeMedidaDFD|sigla}}
+ *      (texto antes do parêntese, ex.: "UST").
  */
 var Campos = {
   SUFIXO_NSA: '_nsa',
@@ -51,10 +53,14 @@ var Campos = {
     var r = {};
     campos.forEach(function (c) {
       if (Utils.vazio(c.valorPadrao)) return;
-      var s = c.valorPadrao.trim() === '=VALOR_SOLUCAO'
+      var modelo = String(c.valorPadrao).trim();
+      if (/^#/.test(modelo)) return; // célula com erro de planilha (ex.: #NAME?)
+      var s = /^(\[VALOR_SOLUCAO\]|=VALOR_SOLUCAO)$/.test(modelo)
         ? Campos.valorSolucao(proc, vars)
-        : Campos.interpolar(c.valorPadrao, proc, vars);
-      if (s && !Utils.vazio(s.valor)) r[c.chave] = s;
+        : Campos.interpolar(modelo, proc, vars);
+      if (!s || Utils.vazio(s.valor)) return;
+      if ((c.tipo === 'moeda' || c.tipo === 'numero' || c.tipo === 'inteiro') && isNaN(Number(s.valor))) return;
+      r[c.chave] = s;
     });
     return r;
   },
@@ -62,13 +68,17 @@ var Campos = {
   interpolar: function (modelo, proc, vars) {
     var faltou = false;
     var origens = [];
-    var valor = String(modelo).replace(/\{\{([\w.]+)\}\}/g, function (_, k) {
+    var valor = String(modelo).replace(/\{\{([\w.]+)(?:\|(\w+))?\}\}/g, function (_, k, filtro) {
       var v = vars[k] !== undefined ? vars[k] : proc[k];
       if (Utils.vazio(v)) { faltou = true; return ''; }
       origens.push(k);
-      return String(v);
+      v = String(v);
+      if (filtro === 'milhar' && !isNaN(Number(v))) v = Number(v).toLocaleString('pt-BR');
+      if (filtro === 'sigla') v = v.split(' (')[0].trim();
+      return v;
     });
-    return faltou ? null : { valor: valor, origem: 'Preenchido anteriormente (' + origens.join(', ') + ')' };
+    if (faltou || !origens.length) return null; // sem dados de etapas anteriores, não há sugestão
+    return { valor: valor, origem: 'Preenchido anteriormente' };
   },
 
   /**

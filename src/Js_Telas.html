@@ -116,8 +116,10 @@ function vNovo() {
     '<label>Fluxo</label><select name="fluxoId">' + S.ctx.fluxos.map(function (f) { return '<option value="' + esc(f.id) + '">' + esc(f.nome) + '</option>'; }).join('') + '</select>' +
     '<label>Título <span class="obrig">*</span></label><input name="titulo" placeholder="Ex.: Novo contrato SGS">' +
     '<label>Objeto da contratação <span class="obrig">*</span></label><textarea name="objeto"></textarea>' +
-    '<div class="linha"><div><label>Setor demandante</label><input name="setorDemandante"></div>' +
-    '<div><label>Nº do processo SUITE (se já houver)</label><input name="numeroSuite"></div></div>' +
+    '<label>Setor demandante</label><input name="setorDemandante">' +
+    '<div class="linha"><div><label>NUP (Número do Processo no SUITE)</label><input name="numeroSuite" placeholder="Se já houver"></div>' +
+    '<div style="flex:0 0 240px"><label>Data de abertura no SUITE</label><input type="date" name="dataAberturaSuite"></div></div>' +
+    '<p class="ajuda">Informando o NUP e a data, a etapa "Abrir processo SUITE" é concluída automaticamente e o processo já começa no DFD.</p>' +
     '<div class="linha"><div><label>Analista responsável</label><select name="responsavelEmail">' + opcoesUsuarios(S.ctx.usuario.email) + '</select></div>' +
     '<div><label>Responsável técnico</label><input name="responsavelTecnico" list="lista-resp-tecnico" value="' + esc(S.ctx.responsavelTecnicoPadrao) + '"></div></div>' +
     datalistUsuarios() +

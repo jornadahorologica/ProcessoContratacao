@@ -85,6 +85,7 @@ function montarHtml() {
   await esperarHash('#/painel');
   await page.click('#menu a[data-view=novo]');
   await esperarHash('#/novo-processo');
+  if (!(await page.$('#form-novo [name=dataAberturaSuite]'))) throw new Error('Novo processo deveria ter a data de abertura no SUITE');
   await page.fill('[name=titulo]', 'Novo contrato SGS');
   await page.fill('[name=objeto]', 'Sustentação e evolução do SGS');
   await page.waitForSelector('a.logo-externo[href="https://suite.ce.gov.br/"] img');
@@ -197,8 +198,14 @@ function montarHtml() {
   await page.waitForFunction(() => /13 de 13/.test(document.querySelector('#bloco-form h3').textContent));
   await foto('4-etp-incisos');
   // Gera o ETP e controla as assinaturas no SUITE
+  await page.click('details[data-secao=etpEstimativaValor] summary');
+  await page.$eval('details[data-secao=etpEstimativaValor]', (d) => { d.open = true; d.scrollIntoView(); });
+  if (!(await page.$('details[data-secao=etpEstimativaValor] [name=valorEstimadoEtp]'))) throw new Error('Valor estimado deveria estar dentro do item 6');
+  await foto('14-etp-item6-valor');
   await page.click('[data-acao=gerarDoc]');
   await esperarCarregar();
+  // Sem abrir aba automaticamente (seria bloqueado): aviso com botão "Abrir documento"
+  await page.waitForSelector('.toast a:has-text("Abrir documento")');
   await page.click('[data-acao=enviarAssinatura]');
   await confirmarPopup();
   await esperarCarregar();

@@ -41,6 +41,31 @@ var APP = {
       url: 'https://suite.ce.gov.br/',
       logoFileId: '1tCyDEoBOZ4DfYy654leem4ev7YgVKM_L',
       etapas: ['NOVO', 'ABRIR_SUITE']
+    },
+    CATALOGO_SEPLAG: {
+      nome: 'Catálogo de itens SEPLAG',
+      url: 'https://s2gpr.sefaz.ce.gov.br/catalogo-web/paginas/catalogo/ItemMaterialServicoListCompleto.seam',
+      logoFileId: '', etapas: ['COD_ITEM']
+    },
+    PORTAL_COMPRAS_CE: {
+      nome: 'Portal de Compras do Ceará',
+      url: 'https://s2gpr.sefaz.ce.gov.br/licita-web/paginas/licita/PublicacaoListItens.seam',
+      logoFileId: '', etapas: ['PESQUISA_PRECO']
+    },
+    PAINEL_PRECOS: {
+      nome: 'Painel de Preços',
+      url: 'https://paineldeprecos.planejamento.gov.br/analise-servicos',
+      logoFileId: '', etapas: ['PESQUISA_PRECO']
+    },
+    BANCO_PRECOS: {
+      nome: 'Banco de Preços',
+      url: 'https://www.bancodeprecos.com.br/Account/Access',
+      logoFileId: '', etapas: ['PESQUISA_PRECO']
+    },
+    TRANSPARENCIA_CE: {
+      nome: 'Portal da Transparência',
+      url: 'https://cearatransparente.ce.gov.br/portal-da-transparencia/contratos/contratos',
+      logoFileId: '', etapas: ['PESQUISA_PRECO']
     }
   }
 };
@@ -102,7 +127,8 @@ var SCHEMA = {
   // tipo "secaoLei": seção de texto de documento (ex.: inciso do ETP); opcoes = "NSA" permite "Não se aplica".
   // valorPadrao: sugestão exibida ao usuário, ex.: "{{descricaoNecessidade}}" ou "=VALOR_SOLUCAO".
   // linha: campos consecutivos com o mesmo valor ficam lado a lado na tela (ex.: "DFD_QTD").
-  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao', 'linha'],
+  // secao: chave de um campo "secaoLei" — o campo aparece DENTRO dessa seção (tela e documento).
+  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao', 'linha', 'secao'],
   // Quem assina cada tipo de documento (no SUITE). signatario aceita {{responsavelTecnico}}.
   cfg_Assinaturas: ['id', 'tipoDocumento', 'ordem:n', 'signatario', 'cargo'],
   cfg_ChecklistItens: ['id', 'fluxoId', 'etapaCodigo', 'descricao', 'obrigatorio:b', 'ordem:n'],

@@ -37,9 +37,21 @@ var ProcessoService = {
 
     var pastas = DriveService.criarPastasProcesso(proc);
     proc = repo('Processos').atualizar(proc.id, pastas);
+    DriveService.compartilhar([proc.pastaId], DriveService.emailsAtivos());
     Historico.registrar(proc.id, '', 'PROCESSO_CRIADO', proc.numero + ' — ' + proc.titulo);
-    if (d.numeroSuite) Variaveis.definir(proc.id, 'numeroSuite', d.numeroSuite, '');
+    if (d.numeroSuite) Variaveis.definir(proc.id, 'numeroSuite', d.numeroSuite, 'ABRIR_SUITE');
+    if (d.dataAberturaSuite) Variaveis.definir(proc.id, 'dataAberturaSuite', d.dataAberturaSuite, 'ABRIR_SUITE');
     Workflow.iniciar(proc);
+    // NUP e data já informados: a etapa "Abrir processo SUITE" é concluída automaticamente
+    if (d.numeroSuite && d.dataAberturaSuite) {
+      var t = repo('Tarefas').filtrar(function (x) {
+        return x.processoId === proc.id && x.etapaCodigo === 'ABRIR_SUITE' && x.status === STATUS_TAREFA.ABERTA;
+      })[0];
+      var etapa = t && ConfigService.etapa(proc.fluxoId, 'ABRIR_SUITE');
+      if (t && !Workflow.pendencias(t, etapa, repo('Processos').obter(proc.id)).length) {
+        Workflow.concluir(t.id, 'Concluída automaticamente: NUP e data de abertura informados na criação do processo.');
+      }
+    }
     return repo('Processos').obter(proc.id);
   },
 
