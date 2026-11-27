@@ -8,6 +8,32 @@ function recarregarProcesso(msg) {
   });
 }
 
+/**
+ * Pop-up "Quem já assinou no SUITE?" para um tipo de documento.
+ * Resolve com {data, ordens}, com null se o tipo não exige assinatura, ou false se o usuário cancelar.
+ */
+function perguntarAssinaturas(tipo, o) {
+  o = o || {};
+  if (!exigeAssinatura(tipo)) return Promise.resolve(null);
+  var resp = S.det && S.det.processo.responsavelTecnico;
+  var lista = '<div style="width:100%"><b>Quem já assinou no SUITE?</b>' + (S.ctx.assinaturasPorTipo[tipo] || []).map(function (a) {
+    var nome = a.signatario === '{{responsavelTecnico}}' ? (resp || 'Responsável técnico') : a.signatario;
+    return '<label class="check"><input type="checkbox" class="dlg-assinante" value="' + esc(a.ordem) + '" checked> ' +
+      esc(nome) + (a.cargo ? ' <span class="ajuda">' + esc(a.cargo) + '</span>' : '') + '</label>';
+  }).join('') + (o.permiteNenhum ? '<p class="ajuda">Desmarque quem ainda não assinou: o documento fica "em assinatura" e você registra o restante depois.</p>' : '') + '</div>';
+  return Dialogo.abrir({ tipo: 'sucesso', icone: 'assinar', titulo: o.titulo || 'Assinaturas — ' + nomeTipoDoc(tipo), texto: o.texto || '',
+    detalhe: lista, campo: { tipo: 'date', rotulo: 'Data da assinatura', valor: hojeISO(), obrigatorio: true },
+    ok: o.ok || 'Registrar assinaturas', classeOk: 'verde', iconeOk: 'check',
+    ler: function (raiz, data) {
+      var ordens = $$('.dlg-assinante', raiz).filter(function (x) { return x.checked; }).map(function (x) { return Number(x.value); });
+      if (!ordens.length && !o.permiteNenhum) { toast('Marque ao menos um signatário.', true); return undefined; }
+      return { data: data, ordens: ordens };
+    } }).then(function (r) { return r || false; });
+}
+
+/** Etapa atual não iniciada (adiantar)? Usa as operações por etapa em vez das da tarefa. */
+function adiantando() { return !!(S.etapaFutura && S.tar && S.tar.antecipada); }
+
 var ACOES = {
   tema: function (d) { aplicarTema(d.tema, true); },
   ir: function (d) { if (d.view === 'processos') S.filtro = null; ir(d.view); },
@@ -19,6 +45,7 @@ var ACOES = {
     Promise.resolve(renderAba()).then(function () { Rotas.atualizar(); });
   },
   selTarefa: function (d) { carregarTarefa(d.tarefa).then(function () { Rotas.atualizar(); }); },
+  selEtapa: function (d) { carregarEtapaFutura(d.etapa).then(function () { Rotas.atualizar(); }); },
   filtrar: function () { S.filtro = { texto: $('#f-texto').value, status: (S.filtro || {}).status || '' }; ir('processos'); },
 
   criarProcesso: function () {
@@ -44,10 +71,26 @@ var ACOES = {
 
   salvarCampos: function (d) {
     var v = valoresForm($(d.raiz));
+    if (adiantando()) return acaoTela('salvarCamposEtapa', [S.procId, S.etapaFutura, v], 'Dados adiantados e salvos.');
     acaoTela('salvarCampos', [S.tarefaId, v], 'Dados salvos.');
   },
   checklist: function (d, el) {
+    if (adiantando()) return acaoTela('marcarChecklistEtapa', [S.procId, S.etapaFutura, d.item, el.checked]);
     acaoTela('marcarChecklist', [S.tarefaId, d.item, el.checked]);
+  },
+  adicionarLinhaTab: function (d, el) {
+    var box = el.closest('.campo-tabela');
+    var tbody = $('table', box).tBodies[0] || $('table', box);
+    tbody.appendChild($('template', box).content.cloneNode(true));
+    var ultima = $$('tr.linha-tab', box).pop();
+    var campo = ultima && $('input, textarea, select', ultima);
+    if (campo) campo.focus();
+  },
+  removerLinhaTab: function (d, el) {
+    var box = el.closest('.campo-tabela');
+    var linhas = $$('tr.linha-tab', box);
+    if (linhas.length > 1) el.closest('tr').remove();
+    else $$('input, textarea, select', linhas[0]).forEach(function (x) { x.value = ''; });
   },
   registrarEnvio: function () {
     acaoTela('registrarEnvio', [S.tarefaId, $('#env-ref').value, $('#env-data').value], 'Envio registrado.');
@@ -67,9 +110,10 @@ var ACOES = {
       detalhe: detalhe, ok: 'Concluir e avançar', classeOk: 'verde', iconeOk: 'check' })
       .then(function (ok) {
         if (!ok) return;
-        acaoTela('concluirTarefa', [S.tarefaId, $('#obs-concluir').value], null, { auto: true }).then(function () {
+        acaoTela('concluirTarefa', [S.tarefaId, $('#obs-concluir').value], null, { auto: true }).then(function (r) {
           var atual = S.tar && S.tar.ativa ? S.tar.etapa.nome : '';
           toast(atual ? 'Agora em: ' + atual : 'O processo seguiu no fluxo.', false, '“' + nome + '” concluída');
+          if (r && r.aviso) toast(r.aviso, true, 'Documento não gerado');
         });
       });
   },
@@ -91,8 +135,15 @@ var ACOES = {
   anexar: function (d) {
     var p = d.prefixo;
     var noFluxo = p === 'wt';
+    var tipo = $('#' + p + '-tipo').value;
     lerArquivo($('#' + p + '-arq')).then(function (arq) {
-      return acaoTela('anexarDocumento', [S.procId, $('#' + p + '-tipo').value, noFluxo ? S.tarefaId : '', arq], 'Documento anexado.');
+      // Documento assinado no SUITE: pergunta quem já assinou o PDF anexado
+      return perguntarAssinaturas(tipo, { titulo: 'Anexar PDF — ' + nomeTipoDoc(tipo), ok: 'Anexar', permiteNenhum: true,
+        texto: 'Este documento é assinado no SUITE. Marque quem já assinou o PDF que está sendo anexado.' })
+        .then(function (ass) {
+          if (ass === false) return;
+          return acaoTela('anexarDocumento', [S.procId, tipo, noFluxo ? S.tarefaId : '', arq, ass], 'Documento anexado.');
+        });
     }).catch(function (e) { toast(e.message, true); });
   },
   vincular: function (d) {
@@ -105,30 +156,21 @@ var ACOES = {
       botoes: [{ rotulo: 'Cancelar', valor: null, classe: 'sec' }, { rotulo: 'Apenas vincular', valor: 'vincular', classe: 'sec' },
         { rotulo: 'Mover para a pasta', valor: 'mover', icone: 'pasta' }] })
       .then(function (op) {
-        if (op) acaoTela('vincularDocumento', [S.procId, tipoDoc, noFluxo ? S.tarefaId : '', link, op === 'mover'], 'Documento vinculado.');
+        if (!op) return;
+        return perguntarAssinaturas(tipoDoc, { titulo: 'Vincular PDF — ' + nomeTipoDoc(tipoDoc), ok: 'Vincular', permiteNenhum: true,
+          texto: 'Este documento é assinado no SUITE. Marque quem já assinou o arquivo vinculado.' })
+          .then(function (ass) {
+            if (ass === false) return;
+            acaoTela('vincularDocumento', [S.procId, tipoDoc, noFluxo ? S.tarefaId : '', link, op === 'mover', ass], 'Documento vinculado.');
+          });
       });
   },
   /** Assinatura em um passo: marca quem assinou no SUITE e a data; o sistema gera o documento se preciso. */
   assinarSuite: function (d) {
     var tipo = d.tipo;
-    var resp = S.det && S.det.processo.responsavelTecnico;
-    var signatarios = (S.ctx.assinaturasPorTipo[tipo] || []).map(function (a) {
-      return { ordem: a.ordem, nome: a.signatario === '{{responsavelTecnico}}' ? (resp || 'Responsável técnico') : a.signatario, cargo: a.cargo };
-    });
-    var lista = '<div style="width:100%"><b>Quem já assinou no SUITE?</b>' + signatarios.map(function (s) {
-      return '<label class="check"><input type="checkbox" class="dlg-assinante" value="' + esc(s.ordem) + '" checked> ' +
-        esc(s.nome) + (s.cargo ? ' <span class="ajuda">' + esc(s.cargo) + '</span>' : '') + '</label>';
-    }).join('') + '</div>';
-    Dialogo.abrir({ tipo: 'sucesso', icone: 'assinar', titulo: 'Assinar no SUITE — ' + nomeTipoDoc(tipo),
-      texto: (S.tar && S.tar.documentoDesatualizado ? 'Os dados mudaram: o documento será gerado novamente. ' : '') +
-        'O sistema gera o documento e o PDF (se ainda não existirem) e registra as assinaturas marcadas.',
-      detalhe: lista, campo: { tipo: 'date', rotulo: 'Data da assinatura', valor: hojeISO(), obrigatorio: true },
-      ok: 'Registrar assinaturas', classeOk: 'verde', iconeOk: 'check',
-      ler: function (raiz, data) {
-        var ordens = $$('.dlg-assinante', raiz).filter(function (x) { return x.checked; }).map(function (x) { return Number(x.value); });
-        if (!ordens.length) { toast('Marque ao menos um signatário.', true); return undefined; }
-        return { data: data, ordens: ordens };
-      } })
+    perguntarAssinaturas(tipo, { titulo: 'Assinar no SUITE — ' + nomeTipoDoc(tipo),
+      texto: (S.tar && S.tar.documentoDesatualizado && S.tar.etapa.documentoTipo === tipo ? 'Os dados mudaram: o documento será gerado novamente. ' : '') +
+        'O sistema gera o documento e o PDF (se ainda não existirem) e registra as assinaturas marcadas.' })
       .then(function (r) {
         if (!r) return;
         acaoTela('assinarNoSuite', [S.procId, tipo, S.tarefaId, r.data, r.ordens]).then(function (doc) {
@@ -258,6 +300,18 @@ var ACOES = {
     S.filtro = { texto: ($('#f-texto') || {}).value || '', status: d.status };
     ir('processos');
   },
+  testarGeracao: function () {
+    var el = $('#log-teste-doc');
+    ocupado(api('testarGeracaoDocumento')).then(function (passos) {
+      var falhas = passos.filter(function (x) { return !x.ok; }).length;
+      el.innerHTML = '<table>' + passos.map(function (x) {
+        return '<tr><td>' + (x.ok ? '<span style="color:var(--verde)">' + ic('check', 15) + '</span>' : '<span style="color:var(--vermelho)">' + ic('x', 15) + '</span>') +
+          '</td><td>' + esc(x.passo) + '</td><td>' + esc(x.detalhe) + '</td></tr>';
+      }).join('') + '</table>';
+      el.classList.remove('oculto');
+      toast(falhas ? falhas + ' passo(s) com erro: veja o detalhe na tabela.' : 'A geração de documentos está funcionando.', !!falhas, 'Teste de geração de documento');
+    });
+  },
   aplicarAtualizacoes: function () {
     ocupado(api('atualizarConfiguracao'), 'Configuração atualizada.').then(function (log) {
       return api('contexto').then(function (c) {
@@ -316,5 +370,6 @@ document.addEventListener('keydown', function (ev) {
 document.addEventListener('change', function (ev) {
   var el = ev.target.closest('[data-change]');
   if (el && MUDANCAS[el.dataset.change]) MUDANCAS[el.dataset.change](el);
+  if (ev.target.closest('#area-trabalho')) reavaliarCondicoes(); // campos que dependem da resposta (ex.: justificativa se SIM)
 });
 </script>

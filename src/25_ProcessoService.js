@@ -170,12 +170,21 @@ var ProcessoService = {
     var tarefas = repo('Tarefas').onde({ processoId: id });
     tarefas.sort(function (a, b) { return a.criadaEm < b.criadaEm ? -1 : 1; });
     var porEtapa = Utils.agrupar(tarefas, function (t) { return t.etapaCodigo; });
+    var variaveis = Variaveis.mapa(id);
+    // Etapas com dados adiantados (preenchidos antes de a etapa começar)
+    var comDados = {};
+    repo('Variaveis').onde({ processoId: id }).forEach(function (v) { if (v.etapaCodigo) comDados[v.etapaCodigo] = true; });
+    // Etapas fora do fluxo atual (ex.: substituídas numa atualização) só aparecem se já foram usadas
+    var inicial = ConfigService.fluxo(p.fluxoId).etapaInicial;
+    var alcancaveis = Workflow._alcancaveis(p.fluxoId, inicial);
     var linhaDoTempo = ConfigService.etapas(p.fluxoId).filter(function (e) {
-      return e.tipo === TIPO_ETAPA.TAREFA || e.tipo === TIPO_ETAPA.DECISAO;
+      return (e.tipo === TIPO_ETAPA.TAREFA || e.tipo === TIPO_ETAPA.DECISAO) &&
+        (e.codigo === inicial || alcancaveis[e.codigo] || porEtapa[e.codigo]);
     }).map(function (e) {
       var inst = porEtapa[e.codigo] || [];
       var ultima = inst[inst.length - 1] || null;
       return {
+        adiantada: !ultima && !!comDados[e.codigo],
         codigo: e.codigo, nome: e.nome, fase: e.fase, setor: e.setor, ordem: e.ordem,
         status: ultima ? ultima.status : 'NAO_INICIADA',
         tarefaId: ultima ? ultima.id : '',
@@ -188,12 +197,40 @@ var ProcessoService = {
       processo: p,
       linhaDoTempo: linhaDoTempo,
       tarefas: tarefas,
-      variaveis: Variaveis.mapa(id),
+      variaveis: variaveis,
+      camposPorEtapa: this.camposPorEtapa(p, variaveis),
       documentos: DocumentoService.listar(id),
       assinaturas: AssinaturaService.listar(id),
       diligencias: DiligenciaService.listar(id),
       instrucao: Instrucao.verificar(p)
     };
+  },
+
+  /**
+   * Aba Dados: valores preenchidos com o nome do campo (como nas telas),
+   * agrupados por etapa. Controles internos (checklist, "não se aplica") ficam de fora.
+   */
+  camposPorEtapa: function (p, vars) {
+    var usados = {};
+    var grupos = ConfigService.etapas(p.fluxoId).map(function (e) {
+      var itens = [];
+      if (e.variavelDecisao && !Utils.vazio(vars[e.variavelDecisao]) && !usados[e.variavelDecisao]) {
+        usados[e.variavelDecisao] = true;
+        itens.push({ chave: e.variavelDecisao, rotulo: e.descricao || e.nome, tipo: 'simNao', valor: vars[e.variavelDecisao] });
+      }
+      ConfigService.campos(p.fluxoId, e.codigo).forEach(function (c) {
+        if (usados[c.chave] || Utils.vazio(vars[c.chave])) return;
+        usados[c.chave] = true;
+        itens.push({ chave: c.chave, rotulo: c.rotulo, tipo: c.tipo, opcoes: c.tipo === 'tabela' ? c.opcoes : '', valor: vars[c.chave] });
+      });
+      return { etapa: e.codigo, nome: e.nome, itens: itens };
+    }).filter(function (g) { return g.itens.length; });
+    var nomes = { valorMapa: ['Valor total do mapa comparativo', 'moeda'], metodoEstimativa: ['Método de estimativa do mapa', 'texto'] };
+    var outros = Object.keys(vars).filter(function (k) {
+      return !usados[k] && nomes[k] && !Utils.vazio(vars[k]);
+    }).map(function (k) { return { chave: k, rotulo: nomes[k][0], tipo: nomes[k][1], valor: vars[k] }; });
+    if (outros.length) grupos.push({ etapa: '', nome: 'Outras informações', itens: outros });
+    return grupos;
   },
 
   /**
@@ -205,11 +242,19 @@ var ProcessoService = {
     op = op || {};
     var det = this.detalhar(idOuNumero);
     var humanas = det.tarefas.filter(function (t) { return t.tipo === TIPO_ETAPA.TAREFA || t.tipo === TIPO_ETAPA.DECISAO; });
-    var sel = null, auto = false, etapaNaoIniciada = '';
+    var sel = null, auto = false, etapaNaoIniciada = '', etapaFutura = '';
     if (op.tarefaId) sel = humanas.filter(function (t) { return t.id === op.tarefaId; })[0] || null;
     if (!sel && op.etapa) {
       sel = humanas.filter(function (t) { return t.etapaCodigo === op.etapa; }).slice(-1)[0] || null;
-      if (!sel) etapaNaoIniciada = op.etapa;
+      // Etapa ainda não iniciada: abre para adiantar o preenchimento
+      if (!sel && det.linhaDoTempo.some(function (e) { return e.codigo === op.etapa; })) etapaFutura = op.etapa;
+      else if (!sel) etapaNaoIniciada = op.etapa;
+    }
+    if (etapaFutura) {
+      return {
+        detalhe: det, tarefaId: null, auto: false, etapaNaoIniciada: '', etapaFutura: etapaFutura,
+        tarefa: (op.aba || 'fluxo') === 'fluxo' ? this.abrirEtapaFutura(det.processo.id, etapaFutura) : null
+      };
     }
     if (!sel) {
       auto = true;
@@ -233,10 +278,35 @@ var ProcessoService = {
   abrirTarefa: function (tarefaId) {
     var t = repo('Tarefas').obterOuFalhar(tarefaId);
     var p = repo('Processos').obterOuFalhar(t.processoId);
-    var etapa = ConfigService.etapa(p.fluxoId, t.etapaCodigo);
+    return this._areaDeTrabalho(p, ConfigService.etapa(p.fluxoId, t.etapaCodigo), t);
+  },
+
+  /**
+   * Etapa que ainda não começou, aberta para ADIANTAR o preenchimento: campos,
+   * decisão, checklist, documentos e cotações ficam gravados e a etapa já
+   * começa pronta quando chegar a vez dela. Concluir só quando ela estiver ativa.
+   */
+  abrirEtapaFutura: function (idOuNumero, etapaCodigo) {
+    var p = this.resolver(idOuNumero);
+    var etapa = this._etapaAdiantavel(p, etapaCodigo);
+    return this._areaDeTrabalho(p, etapa, {
+      id: '', processoId: p.id, etapaCodigo: etapa.codigo, nome: etapa.nome, tipo: etapa.tipo,
+      status: 'NAO_INICIADA', setor: etapa.setor || '', responsavelEmail: '', prazo: ''
+    });
+  },
+
+  _etapaAdiantavel: function (p, etapaCodigo) {
+    var etapa = ConfigService.etapa(p.fluxoId, etapaCodigo);
+    if (etapa.tipo !== TIPO_ETAPA.TAREFA && etapa.tipo !== TIPO_ETAPA.DECISAO) throw Utils.erro('Esta etapa não tem dados a preencher.');
+    return etapa;
+  },
+
+  _areaDeTrabalho: function (p, etapa, t) {
     var blocos = ConfigService.blocos(etapa);
     var vars = Variaveis.mapa(p.id);
+    var futura = t.status === 'NAO_INICIADA';
     var r = {
+      antecipada: futura && p.status === STATUS_PROCESSO.EM_ANDAMENTO,
       tarefa: t,
       etapa: etapa,
       blocos: blocos,
@@ -247,10 +317,11 @@ var ProcessoService = {
       }),
       valores: vars,
       documentos: repo('Documentos').filtrar(function (d) {
-        return d.processoId === p.id && (d.tarefaId === t.id || (etapa.documentoTipo && d.tipoCodigo === etapa.documentoTipo));
+        return d.processoId === p.id && ((t.id && d.tarefaId === t.id) || (etapa.documentoTipo && d.tipoCodigo === etapa.documentoTipo) ||
+          (futura && !d.tarefaId && d.etapaCodigo === etapa.codigo));
       }),
       decisao: etapa.variavelDecisao ? { variavel: etapa.variavelDecisao, opcoes: Utils.csv(etapa.opcoesDecisao) } : null,
-      ativa: STATUS_TAREFA_ATIVOS.indexOf(t.status) >= 0 && p.status === STATUS_PROCESSO.EM_ANDAMENTO,
+      ativa: !futura && STATUS_TAREFA_ATIVOS.indexOf(t.status) >= 0 && p.status === STATUS_PROCESSO.EM_ANDAMENTO,
       pendencias: [],
       destinosDevolucao: []
     };
@@ -258,9 +329,11 @@ var ProcessoService = {
     if (etapa.documentoTipo) {
       var rascunho = r.documentos.filter(function (d) { return d.tipoCodigo === etapa.documentoTipo && d.origem === 'GERADO' && d.status === 'RASCUNHO'; })
         .sort(function (a, b) { return a.criadoEm < b.criadoEm ? 1 : -1; })[0];
-      r.documentoDesatualizado = AssinaturaService.desatualizado(rascunho, etapa.codigo);
+      r.documentoDesatualizado = AssinaturaService.desatualizado(rascunho, AssinaturaService.etapasDoTipo(p, etapa.documentoTipo));
+      var tipoDoc = ConfigService.tipoDocumento(etapa.documentoTipo);
+      r.documentoAplicavel = !tipoDoc || Condicao.avaliar(tipoDoc.condicao, vars);
     }
-    r.sugestoes = r.ativa ? Campos.sugestoes(p, r.campos, vars) : {};
+    r.sugestoes = r.ativa || r.antecipada ? Campos.sugestoes(p, r.campos, vars) : {};
     if (r.ativa) {
       r.proximas = Workflow.proximas(p.fluxoId, etapa.codigo, vars);
       r.pendencias = Workflow.pendencias(t, etapa, p);
@@ -283,7 +356,29 @@ var ProcessoService = {
     var t = repo('Tarefas').obterOuFalhar(tarefaId);
     if (STATUS_TAREFA_ATIVOS.indexOf(t.status) < 0) throw Utils.erro('A tarefa não está ativa.');
     var p = repo('Processos').obterOuFalhar(t.processoId);
-    var etapa = ConfigService.etapa(p.fluxoId, t.etapaCodigo);
+    return this._salvarCampos(p, ConfigService.etapa(p.fluxoId, t.etapaCodigo), t.id, valores);
+  },
+
+  /** Adiantar: grava os dados de uma etapa que ainda não começou. */
+  salvarCamposEtapa: function (processoId, etapaCodigo, valores) {
+    var p = this._exigirAdiantavel(processoId);
+    return this._salvarCampos(p, this._etapaAdiantavel(p, etapaCodigo), '', valores);
+  },
+
+  marcarChecklistEtapa: function (processoId, etapaCodigo, itemId, marcado) {
+    var p = this._exigirAdiantavel(processoId);
+    this._etapaAdiantavel(p, etapaCodigo);
+    Variaveis.definir(p.id, 'checklist.' + itemId, marcado ? 'true' : 'false', etapaCodigo);
+    return true;
+  },
+
+  _exigirAdiantavel: function (processoId) {
+    var p = repo('Processos').obterOuFalhar(processoId);
+    if (p.status !== STATUS_PROCESSO.EM_ANDAMENTO) throw Utils.erro('O processo não está em andamento.');
+    return p;
+  },
+
+  _salvarCampos: function (p, etapa, tarefaId, valores) {
     var permitidas = {};
     ConfigService.campos(p.fluxoId, etapa.codigo).forEach(function (c) {
       permitidas[c.chave] = c;
@@ -295,7 +390,8 @@ var ProcessoService = {
       if (!permitidas[k]) return;
       var v = valores[k];
       if (permitidas[k].tipo === 'nsa') v = v === true || v === 'true' ? 'true' : 'false';
-      if (Array.isArray(v)) v = v.filter(String).join('; '); // múltipla escolha
+      if (permitidas[k].tipo === 'tabela') v = JSON.stringify(Campos.linhas(permitidas[k], v));
+      else if (Array.isArray(v)) v = v.filter(String).join('; '); // múltipla escolha
       if (permitidas[k].tipo === 'inteiro') {
         var bruto = String(v === null || v === undefined ? '' : v).replace(/[.\s]/g, '');
         if (bruto !== '' && !/^\d+$/.test(bruto)) throw Utils.erro('O campo "' + permitidas[k].rotulo + '" aceita somente números inteiros.');
@@ -313,7 +409,7 @@ var ProcessoService = {
     if (aceitos.valorEstimadoEtp !== undefined && aceitos.valorEstimadoEtp !== '') {
       repo('Processos').atualizar(p.id, { valorEstimado: aceitos.valorEstimadoEtp, atualizadoEm: Utils.agora() });
     }
-    Historico.registrar(p.id, t.id, 'DADOS_SALVOS', etapa.nome + ': ' + Object.keys(aceitos).join(', '));
+    Historico.registrar(p.id, tarefaId, tarefaId ? 'DADOS_SALVOS' : 'DADOS_ADIANTADOS', etapa.nome + ': ' + Object.keys(aceitos).join(', '));
     return true;
   },
 

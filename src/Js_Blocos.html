@@ -14,15 +14,45 @@ function sugestaoHtml(c, ed) {
 }
 
 function permiteNsa(c) { return c.tipo === 'secaoLei' && /(^|[,;\s])NSA($|[,;\s])/i.test(c.opcoes || ''); }
+function vazioCampo(c, v) {
+  if (c.tipo === 'tabela') return !linhasTabela(c, v).length;
+  return v === undefined || v === null || String(v).trim() === '';
+}
 
-/** Seção de documento (ex.: inciso do ETP): recolhível, com "Não se aplica" quando permitido. */
+/** Condição do campo (cfg_Campos.condicao), avaliada no navegador com a mesma sintaxe do servidor. */
+function avaliarCondicao(expr, vals) {
+  if (!expr || !String(expr).trim()) return true;
+  var norm = function (v) { return String(v === null || v === undefined ? '' : v).trim().replace(/^["']|["']$/g, '').toUpperCase(); };
+  return String(expr).split('||').some(function (ou) {
+    return ou.split('&&').every(function (t) {
+      var m = t.trim().match(/^([\w.]+)\s*(==|!=)\s*(.*)$/);
+      if (!m) return true;
+      return m[2] === '==' ? norm(vals[m[1]]) === norm(m[3]) : norm(vals[m[1]]) !== norm(m[3]);
+    });
+  });
+}
+function atribCondicao(c, vals) {
+  if (!c.condicao) return '';
+  return ' data-condicao="' + esc(c.condicao) + '"' + (avaliarCondicao(c.condicao, vals) ? '' : ' style="display:none"');
+}
+/** Mostra/esconde os campos condicionais conforme o que está preenchido na tela (antes de salvar). */
+function reavaliarCondicoes() {
+  var area = $('#area-trabalho');
+  if (!area || !S.tar) return;
+  var vals = Object.assign({}, S.tar.valores, valoresForm(area));
+  $$('[data-condicao]', area).forEach(function (el) { el.style.display = avaliarCondicao(el.dataset.condicao, vals) ? '' : 'none'; });
+}
+
+/** Seção de documento (ex.: item do ETP/TR): recolhível. Fica aberta enquanto faltar algo dentro dela. */
 function secaoHtml(c, w, ed) {
   var v = w.valores[c.chave] || '';
   var nsa = permiteNsa(c) && w.valores[c.chave + '_nsa'] === 'true';
-  var ok = String(v).trim() !== '';
+  var filhos = w.campos.filter(function (x) { return x.secao === c.chave && avaliarCondicao(x.condicao, w.valores); });
+  var ok = String(v).trim() !== '' && !filhos.some(function (x) { return x.obrigatorio && vazioCampo(x, w.valores[x.chave]); });
+  var aberta = !ok || filhos.some(function (x) { return vazioCampo(x, w.valores[x.chave]); }) || (S.secoesAbertas || {})[c.chave];
   var ico = ok ? (nsa ? '<span class="ajuda">—</span>' : '<span style="color:var(--verde)">' + ic('check', 16) + '</span>') : '<span class="ponto"></span>';
   var dis = ed ? '' : ' disabled';
-  return '<details class="secao' + (ok ? ' ok' : '') + '"' + (ok ? '' : ' open') + ' data-secao="' + esc(c.chave) + '">' +
+  return '<details class="secao' + (ok ? ' ok' : '') + '"' + (aberta ? ' open' : '') + ' data-secao="' + esc(c.chave) + '"' + atribCondicao(c, w.valores) + '>' +
     '<summary><span class="ico">' + ico + '</span><span>' + esc(c.rotulo) + (c.obrigatorio ? ' <span class="obrig">*</span>' : '') + '</span>' +
     (nsa ? ' <span class="tag RASCUNHO">Não se aplica</span>' : '') + '</summary><div class="secao-corpo">' +
     (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') +
@@ -31,12 +61,53 @@ function secaoHtml(c, w, ed) {
     '<textarea class="grande" name="' + esc(c.chave) + '" placeholder="' + (nsa ? 'Justificativa do “Não se aplica”' : 'Texto da seção') + '"' + dis + '>' +
     esc(v) + '</textarea>' + sugestaoHtml(c, ed) +
     w.campos.filter(function (x) { return x.secao === c.chave; }).map(function (x) {
-      return '<div class="campo-da-secao">' + campoHtml(x, w.valores[x.chave], ed) + '</div>';
+      return '<div class="campo-da-secao"' + atribCondicao(x, w.valores) + '>' + campoHtml(x, w.valores[x.chave], ed, true) + '</div>';
     }).join('') + '</div></details>';
 }
 
-function campoHtml(c, valor, ed) {
+/** Colunas de um campo "tabela": "chave|Rótulo|tipo|op1,op2;..." (cfg_Campos.opcoes). */
+function colunasTabela(c) {
+  return String(c.opcoes || '').split(';').map(function (x) { return x.trim(); }).filter(String).map(function (def) {
+    var p = def.split('|').map(function (x) { return x.trim(); });
+    return { chave: p[0], rotulo: p[1] || p[0], tipo: p[2] || 'texto', opcoes: p[3] ? p[3].split(',').map(function (o) { return o.trim(); }) : [] };
+  });
+}
+function linhasTabela(c, v) {
+  var l = v;
+  if (typeof l === 'string') { try { l = l.trim() ? JSON.parse(l) : []; } catch (e) { l = []; } }
+  if (!Array.isArray(l)) return [];
+  var cols = colunasTabela(c);
+  return l.filter(function (x) { return x && cols.some(function (k) { return String(x[k.chave] || '').trim() !== ''; }); });
+}
+function linhaTabelaHtml(cols, l, ed) {
+  return '<tr class="linha-tab">' + cols.map(function (k) {
+    var v = l[k.chave] || '';
+    if (!ed) return '<td>' + esc(v) + '</td>';
+    if (k.tipo === 'selecao') {
+      return '<td><select data-col="' + esc(k.chave) + '"><option value=""></option>' + k.opcoes.map(function (o) {
+        return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
+      }).join('') + '</select></td>';
+    }
+    if (k.tipo === 'textoLongo') return '<td><textarea rows="2" data-col="' + esc(k.chave) + '">' + esc(v) + '</textarea></td>';
+    return '<td><input data-col="' + esc(k.chave) + '" value="' + esc(v) + '"></td>';
+  }).join('') + (ed ? '<td class="acao-linha"><button class="btn sec peq" data-acao="removerLinhaTab" title="Remover linha">' + ic('x', 13) + '</button></td>' : '') + '</tr>';
+}
+/** Campo "tabela" (ex.: riscos, dotações): uma linha por registro, com "+ Adicionar linha". */
+function tabelaCampoHtml(c, v, ed) {
+  var cols = colunasTabela(c);
+  var linhas = linhasTabela(c, v);
+  if (ed && !linhas.length) linhas = [{}];
+  var cab = '<tr>' + cols.map(function (k) { return '<th>' + esc(k.rotulo) + '</th>'; }).join('') + (ed ? '<th></th>' : '') + '</tr>';
+  if (!ed && !linhas.length) return '<div class="vazio">Nenhuma linha.</div>';
+  return '<div class="campo-tabela" data-tabela="' + esc(c.chave) + '"><table>' + cab +
+    linhas.map(function (l) { return linhaTabelaHtml(cols, l, ed); }).join('') + '</table>' +
+    (ed ? '<template>' + linhaTabelaHtml(cols, {}, true) + '</template>' +
+      '<button class="btn sec peq" data-acao="adicionarLinhaTab" style="margin-top:6px">+ Adicionar linha</button>' : '') + '</div>';
+}
+
+function campoHtml(c, valor, ed, dentroDaSecao) {
   if (c.tipo === 'secaoLei') return secaoHtml(c, S.tar, ed);
+  var cond = dentroDaSecao ? '' : atribCondicao(c, S.tar ? S.tar.valores : {});
   var dis = ed ? '' : ' disabled';
   var v = valor === undefined || valor === null ? '' : valor;
   var rot = '<label>' + esc(c.rotulo) + (c.obrigatorio ? ' <span class="obrig">*</span>' : '') + '</label>';
@@ -47,6 +118,7 @@ function campoHtml(c, valor, ed) {
     case 'numero': case 'moeda': inp = '<input type="number" step="' + (c.tipo === 'moeda' ? '0.01' : 'any') + '" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'data': inp = '<input type="date" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
     case 'email': inp = '<input type="email" name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>'; break;
+    case 'tabela': inp = tabelaCampoHtml(c, v, ed); break;
     case 'multipla': {
       var marcados = String(v).split(';').map(function (x) { return x.trim(); });
       inp = '<div class="multipla">' + String(c.opcoes || '').split(';').filter(String).map(function (o) {
@@ -66,7 +138,7 @@ function campoHtml(c, valor, ed) {
       break;
     default: inp = '<input name="' + esc(c.chave) + '" value="' + esc(v) + '"' + dis + '>';
   }
-  return '<div>' + rot + inp + (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') + sugestaoHtml(c, ed) + '</div>';
+  return '<div' + cond + '>' + rot + inp + (c.ajuda ? '<div class="ajuda">' + esc(c.ajuda) + '</div>' : '') + sugestaoHtml(c, ed) + '</div>';
 }
 
 /** Renderiza os campos; consecutivos com o mesmo "linha" (cfg_Campos) ficam lado a lado. */
@@ -84,21 +156,32 @@ function camposEmLinhas(campos, w, ed) {
   return html;
 }
 
+/** Radios da decisão da etapa (ex.: Natureza contínua? SIM/NÃO). */
+function decisaoHtml(w, ed) {
+  var v = w.valores[w.decisao.variavel] || '';
+  return '<div id="bloco-decisao" class="decisao-form"><label>' + esc(w.etapa.descricao ? w.etapa.descricao.split('?')[0] + '?' : w.etapa.nome) +
+    ' <span class="obrig">*</span></label><div class="opcoes-decisao">' + w.decisao.opcoes.map(function (o) {
+      return '<label class="check"><input type="radio" name="' + esc(w.decisao.variavel) + '" value="' + esc(o) + '"' +
+        (o === v ? ' checked' : '') + (ed ? '' : ' disabled') + '> ' + esc(o === 'NAO' ? 'NÃO' : o) + '</label>';
+    }).join('') + '</div></div>';
+}
+
 function bFormulario(w, ed) {
   if (!w.campos.length) return '';
-  var secoes = w.campos.filter(function (c) { return c.tipo === 'secaoLei'; });
+  var comDecisao = w.decisao && w.blocos.indexOf('F') >= 0;
+  var secoes = w.campos.filter(function (c) { return c.tipo === 'secaoLei' && !c.secao && avaliarCondicao(c.condicao, w.valores); });
   var feitas = secoes.filter(function (c) { return String(w.valores[c.chave] || '').trim() !== ''; }).length;
   var progresso = secoes.length ? '<span class="progresso"><span style="width:' + Math.round(100 * feitas / secoes.length) + '%"></span></span>' +
     '<span class="ajuda">' + feitas + ' de ' + secoes.length + ' seções preenchidas</span>' : '';
   return '<div class="bloco" id="bloco-form">' + cabBloco('editar', 'Dados da etapa', '<span class="acoes">' + progresso +
-    (secoes.length ? '<button class="btn sec peq" data-acao="expandirSecoes">Expandir/recolher</button>' : '') + '</span>') +
-    camposEmLinhas(w.campos, w, ed) +
+    (secoes.length > 1 ? '<button class="btn sec peq" data-acao="expandirSecoes">Expandir/recolher</button>' : '') + '</span>') +
+    (comDecisao ? decisaoHtml(w, ed) : '') + camposEmLinhas(w.campos, w, ed) +
     (ed ? '<div class="acoes barra-salvar"><button class="btn" data-acao="salvarCampos" data-raiz="#bloco-form">' + ic('check', 15) + 'Salvar dados</button>' +
       '<span class="ajuda">Salve com frequência — os textos ficam guardados como rascunho até a conclusão da etapa.</span></div>' : '') + '</div>';
 }
 
 function bDecisao(w, ed) {
-  if (!w.decisao) return '';
+  if (!w.decisao || (w.campos.length && w.blocos.indexOf('A') >= 0)) return ''; // decisão dentro do formulário
   var v = w.valores[w.decisao.variavel] || '';
   return '<div class="bloco" id="bloco-decisao">' + cabBloco('decisao', 'Decisão') + '<p>' + esc(w.etapa.descricao || w.etapa.nome) + '</p>' +
     w.decisao.opcoes.map(function (o) {
@@ -169,31 +252,46 @@ function formAnexo(prefixo, tipoPadrao) {
 }
 
 function bDocumentos(w, ed) {
-  var tipo = w.etapa.documentoTipo;
-  var assinado = w.documentos.some(function (d) { return d.tipoCodigo === tipo && d.status === 'FINAL'; });
-  var assina = ed && tipo && exigeAssinatura(tipo) && !assinado;
+  var tipo = w.documentoAplicavel === false ? '' : w.etapa.documentoTipo;
+  var docsTipo = w.documentos.filter(function (d) { return d.tipoCodigo === tipo; });
+  var assinado = docsTipo.some(function (d) { return d.status === 'FINAL'; });
+  var exige = tipo && exigeAssinatura(tipo);
+  var assina = ed && exige && !assinado;
   var botoes = '<span class="acoes">' +
     (ed && tipo && tipo !== 'MAPA_PRECOS' ? '<button class="btn sec peq" data-acao="gerarDoc" data-tipo="' + esc(tipo) + '">' + ic('editar', 14) + 'Gerar a partir do modelo</button>' : '') +
     (assina ? '<button class="btn verde peq" data-acao="assinarSuite" data-tipo="' + esc(tipo) + '">' + ic('assinar', 14) + 'Assinar no SUITE</button>' : '') + '</span>';
-  return '<div class="bloco" id="bloco-docs">' + cabBloco('doc', 'Documentos' + (tipo ? ' — ' + esc(nomeTipoDoc(tipo)) : ''), botoes) +
-    (assina ? '<div class="info-linha">' + ic('info', 15) + '<span>Depois que o documento for assinado no SUITE, clique em <b>Assinar no SUITE</b>: ' +
-      'o sistema gera o documento (se ainda não existir) e registra as assinaturas. Não é preciso anexar arquivo.</span></div>' : '') +
+  var info = '';
+  if (exige && !assinado) {
+    var gerado = docsTipo.some(function (d) { return d.origem === 'GERADO'; });
+    info = '<div class="info-linha">' + ic('info', 15) + '<span>' + (gerado ? 'O documento já foi gerado.' :
+      '<b>Não é preciso anexar arquivo:</b> ao concluir a etapa, o documento é gerado automaticamente a partir dos dados.') +
+      ' As assinaturas no SUITE podem ser registradas agora (<b>Assinar no SUITE</b>) ou depois — elas só são cobradas na ' +
+      '<b>instrução processual</b>.</span></div>';
+  }
+  if (w.documentoAplicavel === false && w.etapa.documentoTipo) {
+    info = '<div class="info-linha">' + ic('info', 15) + '<span>O documento "' + esc(nomeTipoDoc(w.etapa.documentoTipo)) +
+      '" não se aplica com as respostas desta etapa.</span></div>';
+  }
+  return '<div class="bloco" id="bloco-docs">' + cabBloco('doc', 'Documentos' + (tipo ? ' — ' + esc(nomeTipoDoc(tipo)) : ''), botoes) + info +
     (w.documentoDesatualizado ? '<div class="info-linha aguardando">' + ic('alerta', 15) + '<span>Os dados mudaram depois que o documento foi gerado. ' +
-      'Ele será <b>gerado novamente</b> ao assinar — ou clique em "Gerar" para revisar antes.</span></div>' : '') +
-    tabelaDocs(w.documentos, ed, w.assinaturas) + (ed ? formAnexo('wt', tipo) : '') + '</div>';
+      'Ele será <b>gerado novamente</b> ao concluir ou ao assinar — ou clique em "Gerar" para revisar antes.</span></div>' : '') +
+    tabelaDocs(w.documentos, ed, w.assinaturas) + (ed ? formAnexo('wt', w.etapa.documentoTipo) : '') + '</div>';
 }
 
 function bSolicitacao(w, ed) {
   var t = w.tarefa;
-  var h = '<div class="bloco" id="bloco-solic">' + cabBloco('enviar', 'Solicitação a outro setor');
+  var soEnvio = w.blocos.indexOf('N') >= 0;
+  var h = '<div class="bloco" id="bloco-solic">' + cabBloco('enviar', soEnvio ? 'Encaminhamento' : 'Solicitação a outro setor');
+  if (t.status === 'NAO_INICIADA') return h + '<div class="vazio">O envio é registrado quando a etapa começar.</div></div>';
+  if (soEnvio && !t.enviadoEm) h += '<p class="ajuda">Basta registrar o envio: não é preciso aguardar retorno.</p>';
   if (t.enviadoEm) h += '<div class="info-linha">' + ic('enviar', 15) + 'Enviado em <b>' + dataBR(t.enviadoEm) + '</b>' + (t.referenciaEnvio ? ' — ' + esc(t.referenciaEnvio) : '') + '</div>';
   if (t.retornoEm) h += '<div class="info-linha">' + ic('receber', 15) + 'Retorno em <b>' + dataBR(t.retornoEm) + '</b>' + (t.referenciaRetorno ? ' — ' + esc(t.referenciaRetorno) : '') + '</div>';
-  if (ed && t.status === 'ABERTA') {
+  if (ed && t.status === 'ABERTA' && !(soEnvio && t.enviadoEm)) {
     h += '<div class="linha"><div><label>' + (t.retornoEm ? 'Novo envio — ' : '') + 'Referência do envio (ofício, despacho, e-mail)</label><input id="env-ref"></div>' +
       '<div style="flex:0 0 160px"><label>Data</label><input type="date" id="env-data" value="' + hojeISO() + '"></div>' +
       '<div style="flex:0 0 auto;align-self:end"><button class="btn" data-acao="registrarEnvio">' + ic('enviar', 15) + 'Registrar envio</button></div></div>';
   }
-  if (ed && t.status === 'AGUARDANDO_RETORNO') {
+  if (ed && t.status === 'AGUARDANDO_RETORNO' && !soEnvio) {
     h += '<div class="info-linha aguardando">' + ic('relogio', 15) + '<b>Aguardando retorno</b>' + (t.enviadoEm ? ' há ' + diasEntre(t.enviadoEm, hojeISO()) + ' dia(s)' : '') + '</div><div class="linha"><div><label>Referência do retorno</label><input id="ret-ref"></div>' +
       '<div style="flex:0 0 160px"><label>Data</label><input type="date" id="ret-data" value="' + hojeISO() + '"></div>' +
       '<div style="flex:0 0 auto;align-self:end"><button class="btn" data-acao="registrarRetorno">' + ic('receber', 15) + 'Registrar retorno</button></div></div>';
@@ -203,6 +301,9 @@ function bSolicitacao(w, ed) {
 
 function bCotacoes(w, ed) {
   var cot = w.cotacoes || [];
+  // Novo item: unidade e quantidade vêm do DFD (o valor unitário é informado pelo consultor)
+  var unidadeDfd = String(w.valores.unidadeMedidaDFD || '').split(' (')[0].trim();
+  var qtdDfd = w.valores.quantidadeDFD || 1;
   var h = '<div class="bloco" id="bloco-cot">' + cabBloco('dinheiro', 'Cotações');
   h += cot.length ? '<table><tr><th>Item</th><th>Fornecedor</th><th>Fonte</th><th>Data</th><th class="num">Qtd</th><th class="num">Valor unit.</th><th>Considerada</th><th></th></tr>' +
     cot.map(function (c) {
@@ -214,12 +315,13 @@ function bCotacoes(w, ed) {
     }).join('') + '</table>' : '<div class="vazio">Nenhuma cotação registrada.</div>';
   if (ed) {
     h += '<details style="margin-top:10px"' + (cot.length ? '' : ' open') + '><summary><b>+ Registrar cotação</b></summary><div id="form-cot">' +
-      '<p class="ajuda">Todas as cotações de um mesmo item usam a mesma unidade e quantidade: ao escolher um item já cotado, esses campos são preenchidos.</p>' +
+      '<p class="ajuda">Unidade e quantidade vêm do DFD. Todas as cotações de um mesmo item usam a mesma unidade e quantidade: ao escolher um item já cotado, esses campos são preenchidos.</p>' +
       '<div class="linha"><div><label>Item <span class="obrig">*</span></label><input name="item" list="lista-itens" data-change="itemCotacao" ' +
       'placeholder="Escolha um item já cotado ou digite um novo"></div>' +
       '<div><label>Descrição</label><input name="descricao"></div></div>' +
       '<datalist id="lista-itens">' + Object.keys(w.itensCotados || {}).map(function (k) { return '<option value="' + esc(w.itensCotados[k].item) + '">'; }).join('') + '</datalist>' +
-      '<div class="linha"><div><label>Unidade</label><input name="unidade" placeholder="UST, mês, un"></div><div><label>Quantidade</label><input type="number" name="quantidade" value="1"></div>' +
+      '<div class="linha"><div><label>Unidade</label><input name="unidade" placeholder="UST, mês, un" value="' + esc(unidadeDfd) + '"></div>' +
+      '<div><label>Quantidade</label><input type="number" name="quantidade" value="' + esc(qtdDfd) + '"></div>' +
       '<div><label>Valor unitário (R$) <span class="obrig">*</span></label><input type="number" step="0.01" name="valorUnitario"></div></div>' +
       '<div class="linha"><div><label>Fonte</label><select name="fonte">' + (w.fontes || []).map(function (f) { return '<option>' + esc(f) + '</option>'; }).join('') + '</select></div>' +
       '<div><label>Fornecedor / órgão</label><input name="fornecedor"></div><div><label>CNPJ</label><input name="cnpj"></div></div>' +
@@ -263,13 +365,18 @@ function bMapa(w, ed) {
   return h + '<h2 style="margin-top:14px">Valor total estimado: ' + brl(m.total) + '</h2></div>';
 }
 
-function bInstrucao(w) {
+function bInstrucao(w, ed) {
   var l = w.instrucao || [];
-  return '<div class="bloco" id="bloco-instr">' + cabBloco('tarefas', 'Instrução processual — documentos') + '<table><tr><th></th><th>Documento</th><th>Situação</th></tr>' +
+  return '<div class="bloco" id="bloco-instr">' + cabBloco('tarefas', 'Instrução processual — documentos') + '<table><tr><th></th><th>Documento</th><th>Situação</th><th></th></tr>' +
     l.map(function (i) {
       var ico = !i.exigido ? '<span class="ajuda">—</span>' : i.ok ? '<span style="color:var(--verde)">' + ic('check', 16) + '</span>' : '<span style="color:var(--vermelho)">' + ic('x', 16) + '</span>';
-      var sit = !i.exigido ? 'Não aplicável (' + esc(i.condicao) + ')' : i.ok ? 'OK' : (i.qtd ? 'Existe, mas nenhum marcado como FINAL' : 'Faltando');
-      return '<tr><td>' + ico + '</td><td>' + esc(i.nome) + '</td><td>' + sit + '</td></tr>';
-    }).join('') + '</table><p class="ajuda">Anexe os documentos faltantes no bloco Documentos abaixo, escolhendo o tipo correspondente.</p></div>';
+      var sit = !i.exigido ? 'Não aplicável (' + esc(i.condicao) + ')' : i.ok ? 'OK' :
+        i.assinatura ? (i.qtd ? 'Aguardando assinaturas' : 'Faltando') + '<br><span class="ajuda">Assinam: ' + esc(i.signatarios) + '</span>' :
+        (i.qtd ? 'Existe, mas nenhum marcado como FINAL' : 'Faltando');
+      var acao = ed && i.exigido && !i.ok && i.assinatura
+        ? '<button class="btn verde peq" data-acao="assinarSuite" data-tipo="' + esc(i.codigo) + '">' + ic('assinar', 14) + 'Assinar no SUITE</button>' : '';
+      return '<tr><td>' + ico + '</td><td>' + esc(i.nome) + '</td><td>' + sit + '</td><td>' + acao + '</td></tr>';
+    }).join('') + '</table><p class="ajuda">Documentos assinados no SUITE: use <b>Assinar no SUITE</b> (o sistema gera o documento se preciso) ' +
+    'ou anexe o PDF assinado. Os demais: anexe no bloco Documentos abaixo, escolhendo o tipo correspondente.</p></div>';
 }
 </script>

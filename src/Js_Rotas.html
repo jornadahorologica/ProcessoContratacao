@@ -29,6 +29,7 @@ var Rotas = {
         var num = S.det && S.det.processo && S.det.processo.id === S.procId ? S.det.processo.numero : S.procId;
         var base = '/processo/' + encodeURIComponent(num);
         if (S.aba && S.aba !== 'fluxo') return base + '/' + S.aba;
+        if (S.etapaFutura && !S.tarefaId) return base + '/etapa/' + encodeURIComponent(S.etapaFutura);
         var cod = S.tar && S.tar.tarefa && S.tar.tarefa.id === S.tarefaId ? S.tar.tarefa.etapaCodigo : '';
         return base + (cod ? '/etapa/' + encodeURIComponent(cod) : '');
       }
@@ -42,7 +43,7 @@ var Rotas = {
     var simples = { '': 'painel', painel: 'painel', processos: 'processos', 'minhas-tarefas': 'tarefas', 'novo-processo': 'novo', admin: 'admin' };
     if (partes.length <= 1 && simples.hasOwnProperty(partes[0] || '')) return { view: simples[partes[0] || ''], params: {} };
     if (partes[0] === 'processo' && partes[1]) {
-      var p = { procId: partes[1], tarefaId: null, etapaRota: null, aba: 'fluxo' };
+      var p = { procId: partes[1], tarefaId: null, etapaRota: null, etapaFutura: null, aba: 'fluxo' };
       if (partes[2] === 'etapa' && partes[3]) p.etapaRota = partes[3];
       else if (partes[2] && ABAS.indexOf(partes[2]) >= 0) p.aba = partes[2];
       return { view: 'processo', params: p };
@@ -87,7 +88,7 @@ var Rotas = {
 function ir(view, params) {
   S.view = view;
   S.autoSelecionada = false;
-  if (view !== 'processo') { S.det = null; S.tar = null; }
+  if (view !== 'processo') { S.det = null; S.tar = null; S.etapaFutura = null; }
   if (params) for (var k in params) S[k] = params[k];
   $$('#menu a').forEach(function (a) { a.classList.toggle('ativo', a.dataset.view === view); });
   app('<div class="carregando">Carregando…</div>');
@@ -101,6 +102,6 @@ function ir(view, params) {
   });
 }
 function abrirProcesso(id, tarefaId, aba) {
-  return ir('processo', { procId: id, tarefaId: tarefaId || null, etapaRota: null, aba: aba || 'fluxo' });
+  return ir('processo', { procId: id, tarefaId: tarefaId || null, etapaRota: null, etapaFutura: null, aba: aba || 'fluxo' });
 }
 </script>

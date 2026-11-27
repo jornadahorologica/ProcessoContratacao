@@ -103,7 +103,8 @@ function criarAmbiente(opcoes) {
     getName() { return this.nome; }
     getUrl() { return 'https://drive.google.com/file/d/' + this.id; }
     getMimeType() { return this.mime; }
-    getAs(mime) { const b = { mime, nome: this.nome, setName(n) { this.nome = n; return this; } }; return b; }
+    getAs(mime) { const b = { mime, nome: this.nome, setName(n) { this.nome = n; return this; }, getBytes: () => [37, 80, 68, 70] }; return b; }
+    setTrashed(v) { this.lixeira = v; return this; }
     getBlob() { return { getContentType: () => 'image/png', getBytes: () => [137, 80, 78, 71] }; }
     moveTo(pasta) { this.pai = pasta.id; return this; }
     makeCopy(nome, pasta) {

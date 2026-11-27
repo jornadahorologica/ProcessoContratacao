@@ -29,17 +29,34 @@ var Workflow = {
   },
 
   // ------------------------------------------------------------------ ações humanas
+  /**
+   * Conclui a tarefa. Se a etapa produz um documento que é assinado no SUITE,
+   * ele é gerado automaticamente a partir dos dados (as assinaturas são
+   * cobradas só na instrução processual). Retorna {aviso} se a geração falhar
+   * (a etapa é concluída mesmo assim).
+   */
   concluir: function (tarefaId, observacao) {
     var t = repo('Tarefas').obterOuFalhar(tarefaId);
-    if (t.status === STATUS_TAREFA.AGUARDANDO_RETORNO) {
+    var proc = repo('Processos').obterOuFalhar(t.processoId);
+    var etapa = ConfigService.etapa(proc.fluxoId, t.etapaCodigo);
+    var soEnvio = ConfigService.blocos(etapa).indexOf('N') >= 0;
+    if (t.status === STATUS_TAREFA.AGUARDANDO_RETORNO && !soEnvio) {
       throw Utils.erro('Registre o retorno da solicitação antes de concluir a etapa.');
     }
-    if (t.status !== STATUS_TAREFA.ABERTA) throw Utils.erro('Esta tarefa não está aberta (status: ' + t.status + ').');
-    var proc = repo('Processos').obterOuFalhar(t.processoId);
+    if (STATUS_TAREFA_ATIVOS.indexOf(t.status) < 0) throw Utils.erro('Esta tarefa não está aberta (status: ' + t.status + ').');
     this._exigirProcessoAtivo(proc);
-    var etapa = ConfigService.etapa(proc.fluxoId, t.etapaCodigo);
     var pend = this.pendencias(t, etapa, proc);
     if (pend.length) throw Utils.erro('Há pendências para concluir a etapa:\n• ' + pend.join('\n• '));
+
+    var aviso = null;
+    try {
+      DocumentoService.gerarAoConcluir(proc, etapa, t);
+    } catch (e) {
+      console.error('Geração automática do documento (' + etapa.codigo + '): ' + (e.stack || e));
+      aviso = 'A etapa foi concluída, mas o documento não pôde ser gerado automaticamente: ' + (e.message || e) +
+        '. Gere-o depois pela aba Documentos ou anexe o PDF.';
+      Historico.registrar(proc.id, t.id, 'DOCUMENTO_FALHA', aviso);
+    }
 
     var u = Auth.usuario();
     repo('Tarefas').atualizar(t.id, {
@@ -52,6 +69,7 @@ var Workflow = {
     this._passos = 0;
     this._seguir(proc, t, etapa);
     this.atualizarFase(proc.id);
+    return { aviso: aviso };
   },
 
   devolver: function (tarefaId, destinoCodigo, motivo) {
@@ -100,8 +118,11 @@ var Workflow = {
   registrarEnvio: function (tarefaId, referencia, data) {
     var t = repo('Tarefas').obterOuFalhar(tarefaId);
     if (t.status !== STATUS_TAREFA.ABERTA) throw Utils.erro('A tarefa precisa estar aberta para registrar o envio.');
+    var proc = repo('Processos').obterOuFalhar(t.processoId);
+    // Bloco "N" = somente envio (ex.: CECOC): não fica aguardando retorno
+    var soEnvio = ConfigService.blocos(ConfigService.etapa(proc.fluxoId, t.etapaCodigo)).indexOf('N') >= 0;
     repo('Tarefas').atualizar(t.id, {
-      status: STATUS_TAREFA.AGUARDANDO_RETORNO,
+      status: soEnvio ? STATUS_TAREFA.ABERTA : STATUS_TAREFA.AGUARDANDO_RETORNO,
       enviadoEm: data || Utils.hoje(), referenciaEnvio: referencia || '',
       retornoEm: '', referenciaRetorno: ''
     });
@@ -142,24 +163,21 @@ var Workflow = {
         if (i.obrigatorio && vars['checklist.' + i.id] !== 'true') p.push('Marque o item do checklist: ' + i.descricao);
       });
     }
-    if (blocos.indexOf('B') >= 0 && etapa.documentoTipo) {
-      var docs = repo('Documentos').filtrar(function (d) {
-        return d.processoId === proc.id && d.tipoCodigo === etapa.documentoTipo;
-      });
+    // Documento da etapa: os assinados no SUITE são gerados automaticamente ao concluir
+    // (as assinaturas são cobradas na instrução); os demais precisam ser gerados ou anexados.
+    if (blocos.indexOf('B') >= 0 && etapa.documentoTipo && !AssinaturaService.exige(etapa.documentoTipo)) {
       var tipo = ConfigService.tipoDocumento(etapa.documentoTipo);
-      var nomeTipo = tipo ? tipo.nome : etapa.documentoTipo;
-      if (AssinaturaService.exige(etapa.documentoTipo)) {
-        if (!docs.some(function (d) { return d.status === 'FINAL'; })) {
-          var quem = AssinaturaService.signatarios(proc, etapa.documentoTipo).map(function (s) { return s.signatario; }).join(', ');
-          p.push('Registre as assinaturas do documento "' + nomeTipo + '" (' + quem + '): use "Assinar no SUITE" ' +
-            '(o documento é gerado automaticamente) ou anexe o PDF já assinado');
-        }
-      } else if (!docs.length) {
-        p.push('Gere ou anexe o documento: ' + nomeTipo);
-      }
+      var aplicavel = !tipo || Condicao.avaliar(tipo.condicao, vars);
+      var temDoc = repo('Documentos').filtrar(function (d) {
+        return d.processoId === proc.id && d.tipoCodigo === etapa.documentoTipo;
+      }).length > 0;
+      if (aplicavel && !temDoc) p.push('Gere ou anexe o documento: ' + (tipo ? tipo.nome : etapa.documentoTipo));
     }
     if (blocos.indexOf('D') >= 0 && Utils.vazio(tarefa.retornoEm)) {
       p.push('Registre o envio e o retorno da solicitação');
+    }
+    if (blocos.indexOf('N') >= 0 && Utils.vazio(tarefa.enviadoEm)) {
+      p.push('Registre o envio da solicitação');
     }
     if (blocos.indexOf('E') >= 0) {
       var n = repo('PesquisaPrecos').filtrar(function (c) { return c.processoId === proc.id && c.considerado; }).length;
@@ -174,7 +192,10 @@ var Workflow = {
     }
     if (blocos.indexOf('I') >= 0) {
       Instrucao.verificar(proc).forEach(function (i) {
-        if (i.exigido && !i.ok) p.push('Documento obrigatório da instrução: ' + i.nome + (i.qtd ? ' (marque como FINAL)' : ''));
+        if (!i.exigido || i.ok) return;
+        p.push('Documento obrigatório da instrução: ' + i.nome + (i.assinatura
+          ? ' (registre as assinaturas: ' + i.signatarios + ' — botão "Assinar no SUITE" ou anexe o PDF assinado)'
+          : i.qtd ? ' (marque como FINAL)' : ''));
       });
     }
     return p;
@@ -245,6 +266,7 @@ var Workflow = {
       case TIPO_ETAPA.DECISAO: {
         var t = this._criarTarefa(proc, et, STATUS_TAREFA.ABERTA, origemTarefaId);
         Historico.registrar(proc.id, t.id, 'ETAPA_INICIADA', et.nome);
+        Campos.preencherAutomaticos(proc, et.codigo);
         try { Notificacao.tarefaCriada(proc, t); } catch (e) { console.warn('Falha ao notificar: ' + e); }
         return;
       }
@@ -356,7 +378,10 @@ var Instrucao = {
       var aplicavel = Condicao.avaliar(t.condicao, vars);
       var doTipo = docs.filter(function (d) { return d.tipoCodigo === t.codigo; });
       var finais = doTipo.filter(function (d) { return d.status === 'FINAL'; });
+      var assinatura = AssinaturaService.exige(t.codigo);
       return {
+        assinatura: assinatura,
+        signatarios: assinatura ? AssinaturaService.signatarios(proc, t.codigo).map(function (s) { return s.signatario; }).join(', ') : '',
         codigo: t.codigo,
         nome: t.nome,
         exigido: aplicavel,

@@ -80,13 +80,14 @@ var AssinaturaService = {
    * O documento gerado (rascunho) ficou desatualizado? Isto é: os dados da etapa
    * (ou, no mapa, as cotações) mudaram depois que ele foi gerado.
    */
-  desatualizado: function (doc, etapaCodigo) {
+  desatualizado: function (doc, etapas) {
     if (!doc || doc.status !== 'RASCUNHO' || doc.origem !== 'GERADO') return false;
+    var lista = [].concat(etapas || []).filter(String);
     var ignorar = { valorMapa: true, metodoEstimativa: true, cotacoesAlteradasEm: true };
     var ultima = '';
     repo('Variaveis').onde({ processoId: doc.processoId }).forEach(function (v) {
       if (v.chave === 'cotacoesAlteradasEm' && doc.tipoCodigo === 'MAPA_PRECOS') { if (v.valor > ultima) ultima = v.valor; return; }
-      if (ignorar[v.chave] || /^checklist\./.test(v.chave) || !etapaCodigo || v.etapaCodigo !== etapaCodigo) return;
+      if (ignorar[v.chave] || /^checklist\./.test(v.chave) || lista.indexOf(v.etapaCodigo) < 0) return;
       if (v.atualizadoEm > ultima) ultima = v.atualizadoEm;
     });
     return !!ultima && ultima > doc.criadoEm;
@@ -101,12 +102,11 @@ var AssinaturaService = {
     if (!this.exige(tipoCodigo)) throw Utils.erro('Este tipo de documento não tem assinaturas configuradas.');
     if (Utils.vazio(data)) throw Utils.erro('Informe a data da assinatura.');
     var proc = repo('Processos').obterOuFalhar(processoId);
-    var tarefa = tarefaId ? repo('Tarefas').obter(tarefaId) : null;
-    var etapaCodigo = tarefa ? tarefa.etapaCodigo : '';
+    var etapas = this.etapasDoTipo(proc, tipoCodigo);
     var doc = repo('Documentos').filtrar(function (d) {
       return d.processoId === proc.id && d.tipoCodigo === tipoCodigo && d.origem === 'GERADO' && d.status !== 'FINAL';
     }).sort(function (a, b) { return a.criadoEm < b.criadoEm ? 1 : -1; })[0];
-    if (!doc || this.desatualizado(doc, etapaCodigo)) {
+    if (!doc || this.desatualizado(doc, etapas)) {
       doc = tipoCodigo === 'MAPA_PRECOS'
         ? PesquisaPrecoService.gerarMapa(proc.id, Variaveis.mapa(proc.id).metodoEstimativa, tarefaId)
         : DocumentoService.gerar(proc.id, tipoCodigo, tarefaId);
@@ -122,6 +122,11 @@ var AssinaturaService = {
     });
     if (!registradas && !this.todasRegistradas(doc.id)) throw Utils.erro('Marque ao menos um signatário.');
     return repo('Documentos').obter(doc.id);
+  },
+
+  /** Códigos das etapas cujos dados compõem o documento do tipo. */
+  etapasDoTipo: function (proc, tipoCodigo) {
+    return ConfigService.etapasDoDocumento(proc.fluxoId, tipoCodigo).map(function (e) { return e.codigo; });
   },
 
   /** Usado ao marcar FINAL manualmente: documentos gerados com assinatura exigem todas registradas. */

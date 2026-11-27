@@ -128,7 +128,7 @@ var SCHEMA = {
   // valorPadrao: sugestão exibida ao usuário, ex.: "{{descricaoNecessidade}}" ou "=VALOR_SOLUCAO".
   // linha: campos consecutivos com o mesmo valor ficam lado a lado na tela (ex.: "DFD_QTD").
   // secao: chave de um campo "secaoLei" — o campo aparece DENTRO dessa seção (tela e documento).
-  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao', 'linha', 'secao'],
+  cfg_Campos: ['id', 'fluxoId', 'etapaCodigo', 'chave', 'rotulo', 'tipo', 'obrigatorio:b', 'opcoes', 'ajuda', 'ordem:n', 'valorPadrao', 'linha', 'secao', 'condicao'],
   // Quem assina cada tipo de documento (no SUITE). signatario aceita {{responsavelTecnico}}.
   cfg_Assinaturas: ['id', 'tipoDocumento', 'ordem:n', 'signatario', 'cargo'],
   cfg_ChecklistItens: ['id', 'fluxoId', 'etapaCodigo', 'descricao', 'obrigatorio:b', 'ordem:n'],

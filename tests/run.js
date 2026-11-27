@@ -64,7 +64,8 @@ function concluirSimples(env, procId, etapa, campos, opcoes) {
     env.ok('registrarEnvio', t.id, 'Ofício 1', '2026-11-10');
     env.ok('registrarRetorno', t.id, 'Resposta 1', '2026-11-12');
   }
-  if (w.etapa.documentoTipo && w.blocos.includes('B')) {
+  if (w.blocos.includes('N')) env.ok('registrarEnvio', t.id, 'Despacho 1', '2026-11-10');
+  if (w.etapa.documentoTipo && w.blocos.includes('B') && !opcoes.semDoc) {
     if (opcoes.gerar) assinarTudo(env, env.ok('gerarDocumento', procId, w.etapa.documentoTipo, t.id));
     else env.ok('anexarDocumento', procId, w.etapa.documentoTipo, t.id, arquivo(etapa + '.pdf'));
   }
@@ -91,6 +92,17 @@ function camposEtp(extra) {
     etpSolucao: 'Solução', etpParcelamento: 'Não parcelada', etpResultados: 'Resultados', etpProvidencias: 'Nenhuma',
     etpCorrelatas: 'Nenhuma', etpImpactosAmbientais: 'Serviço de TI sem impacto ambiental relevante',
     etpImpactosAmbientais_nsa: true, etpPosicionamento: 'Contratação adequada'
+  }, extra || {});
+}
+
+/** Todas as seções do TR preenchidas, com um risco. */
+function camposTr(extra) {
+  return Object.assign({
+    trObjeto: 'Objeto', trEspecificacoes: '1.000 UST', trVigencia: '12 meses, prorrogáveis', vigenciaMeses: 12,
+    trNecessidade: 'Necessidade', trSolucao: 'Solução', trExecucao: 'Execução', trGestao: 'Gestão',
+    trRecebimentoPagamento: 'Pagamento mensal', trObrigacoesContratante: 'Contratante', trObrigacoesContratado: 'Contratado',
+    trAdequacaoOrcamentaria: 'Dotação 2026', especificacaoTecnica: 'Especificação', sla: 'ANS',
+    trRiscos: [{ risco: 'Atraso na entrega', probabilidade: 'Média', impacto: 'Alto', preventiva: 'Cronograma', contingencia: 'Multa', responsavel: 'Fiscal' }]
   }, extra || {});
 }
 
@@ -218,7 +230,7 @@ teste('Pendências impedem concluir; campos e checklist liberam', () => {
   assert.match(env.falha('salvarCampos', dfd.id, { quantidadeDFD: '-3' }), /números inteiros/);
   env.ok('salvarCampos', dfd.id, { quantidadeDFD: '12.000', unidadeMedidaDFD: 'Hora técnica' });
   assert.strictEqual(env.ok('detalharProcesso', p.id).variaveis.quantidadeDFD, '12000');
-  assert.match(pend, /DFD - Documento/);
+  assert.ok(!/DFD - Documento/.test(pend), 'documento assinado no SUITE: gerado ao concluir, assinaturas cobradas na instrução');
 });
 
 teste('Solicitação externa (consulta ETICE): envio → aguardando retorno → retorno', () => {
@@ -229,16 +241,15 @@ teste('Solicitação externa (consulta ETICE): envio → aguardando retorno → 
   concluirSimples(env, p.id, 'DFD', { unidadeDemandante: 'CESOP', descricaoNecessidade: 'x', grauPrioridade: 'Alta', quantidadeDFD: 1, unidadeMedidaDFD: 'Serviço' });
   const t = tarefaAberta(env, p.id, 'CONSULTA_ETICE');
   env.ok('salvarCampos', t.id, { resultadoConsultaEtice: 'Favorável' });
-  const docEtice = env.ok('gerarDocumento', p.id, 'CONSULTA_ETICE', t.id);
-  assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /Registre as assinaturas do documento "Consulta prévia ETICE" \(Daniel Boyadijan\)/);
-  assinarTudo(env, docEtice);
-  assert.match(env.ok('abrirTarefa', t.id).pendencias.join(), /envio e o retorno/);
+  assert.deepStrictEqual(env.ok('abrirTarefa', t.id).pendencias, ['Registre o envio e o retorno da solicitação'], 'assinatura não trava a etapa');
   env.ok('registrarEnvio', t.id, 'Ofício 10/2026', '2026-11-01');
   assert.strictEqual(env.ok('painel').indicadores.aguardandoRetorno, 1);
   assert.match(env.falha('concluirTarefa', t.id, ''), /retorno/);
   env.ok('registrarRetorno', t.id, 'Parecer ETICE', '2026-11-05');
-  env.ok('concluirTarefa', t.id, '');
+  assert.deepStrictEqual(env.ok('concluirTarefa', t.id, ''), { aviso: null });
   assert.deepStrictEqual(ativas(env, p.id), ['ETP']);
+  const docs = env.ok('detalharProcesso', p.id).documentos.filter((d) => d.tipoCodigo === 'CONSULTA_ETICE');
+  assert.deepStrictEqual(docs.map((d) => d.origem + ':' + d.status), ['GERADO:RASCUNHO'], 'documento gerado automaticamente ao concluir');
 });
 
 teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BID = SIM)', () => {
@@ -248,7 +259,7 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'NATUREZA', 'PESQUISA_PRECO']);
   // Próximas etapas exibidas no pop-up de conclusão
   const natW = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'NATUREZA').id);
-  assert.deepStrictEqual(natW.proximas, [], 'decisão ainda não registrada');
+  assert.ok(natW.proximas[0].automatica, 'natureza (com a justificativa) segue para a junção');
   const ppW = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'PESQUISA_PRECO').id);
   assert.deepStrictEqual(ppW.proximas.map((x) => x.nome), ['Elaborar Mapa Comparativo']);
   const ciW = env.ok('abrirTarefa', tarefaAberta(env, p.id, 'COD_ITEM').id);
@@ -305,14 +316,15 @@ teste('Paralelo + decisão NÃO + junção + devolução + instrução + fim (BI
   assert.ok(det.tarefas.some((t) => t.etapaCodigo === 'JUNCAO_1' && t.status === 'CONCLUIDA'));
   assert.strictEqual(det.processo.fase, 'ESPECIFICACAO');
 
-  concluirSimples(env, p.id, 'TR', { especificacaoTecnica: 'x', vigenciaMeses: 12 }, { gerar: true });
+  concluirSimples(env, p.id, 'TR', camposTr(), { gerar: true });
   concluirSimples(env, p.id, 'DOTACAO', { programa: '412', valorDotacao: '110.000,00' });
   assert.strictEqual(env.ok('detalharProcesso', p.id).variaveis.valorDotacao, '110000');
   const bid = tarefaAberta(env, p.id, 'BID');
   env.ok('salvarCampos', bid.id, { bid: 'SIM' });
   env.ok('concluirTarefa', bid.id, '');
   concluirSimples(env, p.id, 'BID_TRAMITE');
-  concluirSimples(env, p.id, 'PRE_RESERVA', { numeroPreReserva: 'PR-1' });
+  concluirSimples(env, p.id, 'PRE_RESERVA', { dotacoes: [{ codigo: '10.1.412.0001', fonte: 'BID' }, { codigo: '', fonte: '' }] });
+  assert.deepStrictEqual(JSON.parse(env.ok('detalharProcesso', p.id).variaveis.dotacoes), [{ codigo: '10.1.412.0001', fonte: 'BID' }], 'linhas vazias descartadas');
 
   // Instrução: documentos assinados (FINAL); não objeção BID exigida; ETICE e Justificativa não
   const ins = tarefaAberta(env, p.id, 'INSTRUCAO');
@@ -356,7 +368,10 @@ teste('Tela única: operação devolve o processo e a etapa atualizados na mesma
   assert.strictEqual(tela.detalhe.processo.id, p.id);
   assert.strictEqual(tela.tarefa.etapa.codigo, 'ABRIR_SUITE');
   assert.strictEqual(tela.auto, true);
-  assert.strictEqual(env.ok('telaProcesso', p.numero, { etapa: 'ETP' }).etapaNaoIniciada, 'ETP');
+  const futura = env.ok('telaProcesso', p.numero, { etapa: 'ETP' });
+  assert.strictEqual(futura.etapaFutura, 'ETP', 'etapa não iniciada abre para adiantar');
+  assert.ok(futura.tarefa.antecipada && !futura.tarefa.ativa);
+  assert.strictEqual(env.ok('telaProcesso', p.numero, { etapa: 'XYZ' }).etapaNaoIniciada, 'XYZ');
   assert.strictEqual(env.ok('telaProcesso', p.numero, { aba: 'documentos' }).tarefa, null, 'fora da aba Fluxo não monta a etapa');
   // Operação com "tela": resultado + tela na mesma resposta
   const chamar = (m, args, t) => JSON.parse(env.ctx.apiCall(m, args, t));
@@ -407,14 +422,20 @@ teste('Desempenho: poucas chamadas à planilha por operação e abas com mais de
   assert.ok(ss.getSheetByName('Historico').getLastRow() > 1100);
 });
 
-teste('Natureza contínua = SIM: junção espera a Justificativa', () => {
+teste('Natureza contínua = SIM: justificativa na mesma etapa e documento gerado ao concluir', () => {
   const env = carregar();
   env.ctx.setup();
   const p = ateParalelo(env, 'Contínuo');
   const nat = tarefaAberta(env, p.id, 'NATUREZA');
   env.ok('salvarCampos', nat.id, { naturezaContinua: 'SIM' });
+  assert.match(env.falha('concluirTarefa', nat.id, ''), /Preencha a seção "JUSTIFICATIVA DA NATUREZA CONTINUADA"/);
+  env.ok('salvarCampos', nat.id, { fundamentacaoContinuidade: 'Serviço contínuo (art. 6º, XV).' });
   env.ok('concluirTarefa', nat.id, '');
-  assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'JUSTIFICATIVA', 'PESQUISA_PRECO']);
+  assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'PESQUISA_PRECO']);
+  const docJ = env.ok('detalharProcesso', p.id).documentos.find((d) => d.tipoCodigo === 'JUSTIFICATIVA');
+  assert.ok(docJ && docJ.origem === 'GERADO', 'justificativa gerada ao concluir');
+  assert.ok(env.estado.docs[docJ.fileId].texto.includes('Serviço contínuo (art. 6º, XV).'));
+  assert.ok(!env.ok('detalharProcesso', p.id).linhaDoTempo.some((e) => e.codigo === 'JUSTIFICATIVA'), 'etapa antiga fora da linha do tempo');
   concluirSimples(env, p.id, 'COD_ITEM', { codigoItem: '1', catalogoItem: 'SEPLAG' });
   env.ok('salvarCotacao', p.id, { item: 'X', valorUnitario: 10 });
   // Só 1 cotação: exige a justificativa para menos de 3 cotações
@@ -423,8 +444,6 @@ teste('Natureza contínua = SIM: junção espera a Justificativa', () => {
   concluirSimples(env, p.id, 'PESQUISA_PRECO', { justificativaMenos3Cotacoes: 'Mercado restrito: apenas um fornecedor respondeu.' });
   concluirSimples(env, p.id, 'MAPA_PRECOS');
   concluirSimples(env, p.id, 'MODALIDADE', { modalidadePesquisa: 'Notas fiscais (V)' });
-  assert.deepStrictEqual(ativas(env, p.id), ['JUSTIFICATIVA'], 'TR não pode abrir antes da Justificativa');
-  concluirSimples(env, p.id, 'JUSTIFICATIVA', { fundamentacaoContinuidade: 'serviço contínuo' });
   assert.deepStrictEqual(ativas(env, p.id), ['TR']);
 
   // Devolução do TR para o ETP cancela tudo e recomeça o paralelo
@@ -475,7 +494,7 @@ teste('Repositório: tipos (número pt-BR, booleano, JSON) e remoção', () => {
   assert.strictEqual(env.ctx.repo('PesquisaPrecos').todos().length, 0);
 });
 
-teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, documento e assinaturas', () => {
+teste('ETP: 13 itens obrigatórios, sugestões, valor da solução, documento e assinaturas', () => {
   const env = carregar();
   env.ctx.setup();
   const p = env.ok('criarProcesso', { titulo: 'ETP', objeto: 'Sustentação do SGS' });
@@ -494,8 +513,7 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
     'etpProvidencias', 'etpImpactosAmbientais', 'etpPosicionamento']);
   assert.ok(secoes.every((c, i) => c.rotulo.startsWith((i + 1) + ') ') && c.obrigatorio), 'numeração 1) a 13) e todos obrigatórios');
   assert.strictEqual(secoes[8].rotulo, '9) DEMONSTRATIVO DA PREVISÃO DA CONTRATAÇÃO');
-  const obrigSemNsa = secoes.filter((c) => !/NSA/.test(c.opcoes)).map((c) => c.rotulo.split(')')[0]);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(obrigSemNsa)), ['1', '5', '6', '7', '13'], 'art. 18, §2º');
+  assert.ok(secoes.every((c) => !/NSA/.test(c.opcoes)), 'sem "Não se aplica": todos obrigatórios');
   // Campos complementares dentro das seções
   const sec = (ch) => w.campos.find((c) => c.chave === ch).secao;
   assert.deepStrictEqual([sec('valorEstimadoEtp'), sec('registradoPCA'), sec('itemPCA'), sec('contratadaEtice')],
@@ -518,13 +536,12 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   env.ok('salvarCampos', t.id, { contratadaEtice: 'SIM' });
   assert.strictEqual(env.ok('abrirTarefa', t.id).sugestoes.valorEstimadoEtp.valor, 1200);
 
-  // "Não se aplica": só nos incisos que permitem, e exige justificativa
-  env.ok('salvarCampos', t.id, { etpImpactosAmbientais_nsa: true, etpNecessidade_nsa: true });
+  // Sem "Não se aplica": a marcação é ignorada e o texto continua obrigatório
+  env.ok('salvarCampos', t.id, { etpImpactosAmbientais_nsa: true });
   let det = env.ok('detalharProcesso', p.id);
-  assert.strictEqual(det.variaveis.etpImpactosAmbientais_nsa, 'true');
-  assert.strictEqual(det.variaveis.etpNecessidade_nsa, undefined, 'inciso I é obrigatório: não aceita NSA');
+  assert.strictEqual(det.variaveis.etpImpactosAmbientais_nsa, undefined);
   const pend = env.ok('abrirTarefa', t.id).pendencias.join(' | ');
-  assert.match(pend, /Justifique o "Não se aplica" em: 12\) DESCRIÇÃO DE POSSÍVEIS IMPACTOS/);
+  assert.match(pend, /Preencha a seção "12\) DESCRIÇÃO DE POSSÍVEIS IMPACTOS/);
   assert.match(pend, /Preencha a seção "1\) DESCRIÇÃO DA NECESSIDADE/);
 
   // Preenche tudo e gera o documento
@@ -535,15 +552,15 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   const texto = env.estado.docs[doc.fileId].texto;
   ['ESTUDO TÉCNICO PRELIMINAR', '1) DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', '13) POSICIONAMENTO CONCLUSIVO',
     'Valor estimado da contratação (R$): R$', 'Registrado no PCA?: Sim',
-    'Não se aplica. Justificativa: Serviço de TI sem impacto ambiental relevante', 'R$', 'Daniel Boyadijan', 'Thiago', 'SECEX-PGI',
+    'Serviço de TI sem impacto ambiental relevante', 'R$', 'Daniel Boyadijan', 'Thiago', 'SECEX-PGI',
     'SUITE nº 777/2026'].forEach((trecho) => assert.ok(texto.includes(trecho), 'documento deveria conter: ' + trecho));
   assert.ok(texto.indexOf('1) DESCRIÇÃO') < texto.indexOf('2) DESCRIÇÃO DOS REQUISITOS'), 'ordem dos itens');
   assert.ok(texto.indexOf('6) ESTIMATIVA DO VALOR') < texto.indexOf('Valor estimado da contratação (R$):') &&
     texto.indexOf('Valor estimado da contratação (R$):') < texto.indexOf('7) JUSTIFICATIVAS'), 'valor dentro do item 6');
   assert.ok(!texto.includes('Informações complementares'), 'campos complementares ficam dentro das seções');
 
-  // Assinaturas no SUITE
-  assert.match(env.falha('concluirTarefa', t.id, ''), /Registre as assinaturas do documento "ETP - Estudo Técnico Preliminar" \(Daniel Boyadijan, Thiago, Secretário\(a\)\)/);
+  // Assinaturas no SUITE (não travam a etapa; cobradas na instrução)
+  assert.deepStrictEqual(env.ok('abrirTarefa', t.id).pendencias, []);
   assert.match(env.falha('alterarStatusDocumento', doc.id, 'FINAL'), /assinado no SUITE/);
   env.ok('enviarParaAssinatura', doc.id);
   det = env.ok('detalharProcesso', p.id);
@@ -558,6 +575,7 @@ teste('ETP: 13 incisos, "Não se aplica", sugestões, valor da solução, docume
   env.ok('registrarAssinatura', ass[2].id, '2026-11-13');
   assert.strictEqual(env.ok('detalharProcesso', p.id).documentos.find((d) => d.id === doc.id).status, 'FINAL');
   env.ok('concluirTarefa', t.id, '');
+  assert.strictEqual(env.ok('detalharProcesso', p.id).documentos.filter((d) => d.tipoCodigo === 'ETP').length, 1, 'já assinado: não gera outro');
   assert.deepStrictEqual(ativas(env, p.id), ['COD_ITEM', 'NATUREZA', 'PESQUISA_PRECO']);
 });
 
@@ -596,7 +614,7 @@ teste('Documentos: timbre (cabeçalho), modelo com marcadores e PDF assinado ane
 teste('Migração da configuração: aplicada uma vez, sem duplicar', () => {
   const env = carregar();
   env.ctx.setup();
-  assert.strictEqual(env.estado.props.CFG_VERSAO, '9');
+  assert.strictEqual(env.estado.props.CFG_VERSAO, '10');
   const ss = Object.values(env.estado.planilhas)[0];
   const linhas = (n) => ss.getSheetByName(n).getLastRow();
   const antes = ['cfg_Campos', 'cfg_Assinaturas', 'cfg_DocumentosTipo'].map(linhas);
@@ -619,11 +637,11 @@ teste('Administração: aplica atualizações pendentes pela tela (sem executar 
   env.ctx.repo('cfg_ChecklistItens').inserir({ id: 'X', fluxoId: 'CONTRATACAO', etapaCodigo: 'DFD', descricao: 'Item antigo', obrigatorio: true, ordem: 99 });
   env.ctx.ConfigService.limparCache();
   let ctx = env.ok('contexto');
-  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7, 8, 9]);
+  assert.deepStrictEqual(ctx.configuracao.pendentes.map((m) => m.versao), [3, 4, 5, 6, 7, 8, 9, 10]);
   const log = env.ok('atualizarConfiguracao');
   assert.ok(log.some((l) => /Migração 3 aplicada/.test(l)), log.join('\n'));
   ctx = env.ok('contexto');
-  assert.strictEqual(ctx.configuracao.versao, 9);
+  assert.strictEqual(ctx.configuracao.versao, 10);
   assert.deepStrictEqual(ctx.configuracao.pendentes, []);
   const p = env.ok('criarProcesso', { titulo: 'T', objeto: 'O' });
   concluirSimples(env, p.id, 'ABRIR_SUITE', { numeroSuite: '1', dataAberturaSuite: '2026-11-10' });
@@ -653,9 +671,10 @@ teste('Encaminhar à CECOC: contratação direta encerra; pregão segue para an�
   env.ctx.Workflow._ativar(env.ctx.repo('Processos').obter(p.id), 'ENVIO_CECOC', '');
   env.novaExecucao();
   const t = tarefaAberta(env, p.id, 'ENVIO_CECOC');
-  assert.match(env.falha('concluirTarefa', t.id, ''), /envio e o retorno/);
+  assert.match(env.falha('concluirTarefa', t.id, ''), /Registre o envio da solicitação/);
   env.ok('registrarEnvio', t.id, 'Despacho CESOP', '2026-11-20');
-  env.ok('registrarRetorno', t.id, 'Retorno CECOC', '2026-11-24');
+  assert.strictEqual(tarefaAberta(env, p.id, 'ENVIO_CECOC').status, 'ABERTA', 'não fica aguardando retorno');
+  assert.match(env.falha('registrarRetorno', t.id, 'x', '2026-11-24'), /aguardando retorno/);
   env.ok('concluirTarefa', t.id, '');
   const det = env.ok('detalharProcesso', p.id);
   assert.strictEqual(det.processo.status, 'CONCLUIDO');
@@ -764,16 +783,13 @@ teste('Ajustes do PO 12–14: assinar no SUITE em um passo, mapa automático, ju
   env.ctx.setup();
   const p = ateParalelo(env, 'PO 12-14');
 
-  // 12) Justificativa: texto único com modelo sugerido; sem anexo — "Assinar no SUITE" gera e registra
-  const nat = tarefaAberta(env, p.id, 'NATUREZA');
-  env.ok('salvarCampos', nat.id, { naturezaContinua: 'SIM' });
-  env.ok('concluirTarefa', nat.id, '');
-  const tj = tarefaAberta(env, p.id, 'JUSTIFICATIVA');
+  // 12) Justificativa (na etapa da natureza): texto único com modelo sugerido; "Assinar no SUITE" gera e registra
+  const tj = tarefaAberta(env, p.id, 'NATUREZA');
+  env.ok('salvarCampos', tj.id, { naturezaContinua: 'SIM' });
   const wj = env.ok('abrirTarefa', tj.id);
   assert.match(wj.sugestoes.fundamentacaoContinuidade.valor, /^Trata-se da contratação de Serviços de TI.*art\. 6º, inciso XV/s);
   assert.strictEqual(wj.sugestoes.fundamentacaoContinuidade.origem, 'Modelo sugerido');
   env.ok('salvarCampos', tj.id, { fundamentacaoContinuidade: wj.sugestoes.fundamentacaoContinuidade.valor + ' Jurisprudência X.' });
-  assert.match(env.ok('abrirTarefa', tj.id).pendencias.join(), /Registre as assinaturas do documento "Justificativa \(natureza continuada\)"/);
   const docJ = env.ok('assinarNoSuite', p.id, 'JUSTIFICATIVA', tj.id, '2026-11-25', []);
   assert.strictEqual(docJ.status, 'FINAL', 'gerado e assinado em um passo');
   assert.ok(env.estado.docs[docJ.fileId].texto.includes('Jurisprudência X.'));
@@ -816,6 +832,85 @@ teste('Ajustes do PO 12–14: assinar no SUITE em um passo, mapa automático, ju
   assert.strictEqual(parcial.status, 'FINAL', 'Modalidade só tem o Daniel como signatário');
   env.ok('concluirTarefa', tmod.id, '');
   assert.deepStrictEqual(ativas(env, p.id), ['TR']);
+});
+
+teste('Ajustes do PO (migração 10): DFD preenchido, adiantar etapas, tabelas, assinatura no anexo e geração ao concluir', () => {
+  const env = carregar();
+  env.ctx.setup();
+  // 1) DFD recebe o setor demandante e o objeto do "Novo processo" (editáveis)
+  const p = env.ok('criarProcesso', { titulo: 'PO 10', objeto: 'Licenças de escritório', setorDemandante: 'SEPLAG',
+    numeroSuite: '55/2026', dataAberturaSuite: '2026-11-20' });
+  let v = env.ok('detalharProcesso', p.id).variaveis;
+  assert.strictEqual(v.unidadeDemandante, 'SEPLAG');
+  assert.strictEqual(v.descricaoNecessidade, 'Licenças de escritório');
+  const dfd = tarefaAberta(env, p.id, 'DFD');
+  env.ok('salvarCampos', dfd.id, { unidadeDemandante: 'SEPLAG/COTIC' });
+  assert.strictEqual(env.ok('detalharProcesso', p.id).variaveis.unidadeDemandante, 'SEPLAG/COTIC');
+
+  // Adiantar: etapa futura aberta, dados gravados e a etapa começa pronta
+  const tr = env.ok('abrirEtapa', p.id, 'TR');
+  assert.ok(tr.antecipada && !tr.ativa);
+  assert.ok(tr.campos.some((c) => c.chave === 'trRiscos' && c.tipo === 'tabela'));
+  assert.deepStrictEqual(tr.checklist, [], 'checklist do TR removido (campos já são obrigatórios)');
+  env.ok('salvarCamposEtapa', p.id, 'TR', camposTr({ trObjeto: 'Objeto adiantado' }));
+  const det = env.ok('detalharProcesso', p.id);
+  assert.strictEqual(det.variaveis.trObjeto, 'Objeto adiantado');
+  assert.strictEqual(JSON.parse(det.variaveis.trRiscos)[0].risco, 'Atraso na entrega');
+  assert.ok(det.linhaDoTempo.find((e) => e.codigo === 'TR').adiantada);
+  assert.match(env.falha('salvarCamposEtapa', p.id, 'PARALELO_1', {}), /não tem dados/);
+  // Grupos da aba Dados com o nome dos campos
+  const grupoDfd = det.camposPorEtapa.find((g) => g.etapa === 'DFD');
+  assert.ok(grupoDfd.itens.some((i) => i.rotulo === 'Unidade demandante' && i.valor === 'SEPLAG/COTIC'));
+  assert.ok(!det.camposPorEtapa.some((g) => g.itens.some((i) => /^checklist\./.test(i.chave))));
+
+  // Tabela obrigatória: ao menos uma linha
+  env.novaExecucao();
+  const S = env.ctx;
+  const camposPre = S.ConfigService.campos('CONTRATACAO', 'PRE_RESERVA');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(camposPre.map((c) => c.chave))), ['dotacoes']);
+  assert.match(S.Campos.pendencias(camposPre, { dotacoes: '[{"codigo":"","fonte":""}]' }).join(), /ao menos uma linha/);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(S.Campos.pendencias(camposPre, { dotacoes: '[{"codigo":"1","fonte":"Tesouro"}]' }))), []);
+  assert.strictEqual(S.ConfigService.tipoDocumento('ETICE_CNH').nome, 'Documento com foto do assinante do contrato');
+
+  // Geração ao concluir: se falhar, a etapa é concluída e o aviso volta para a tela
+  env.ok('salvarCampos', dfd.id, { grauPrioridade: 'Alta', quantidadeDFD: 10, unidadeMedidaDFD: 'Licença' });
+  env.ok('marcarChecklist', dfd.id, env.ok('abrirTarefa', dfd.id).checklist[0].id, true);
+  const criar = env.ctx.DocumentApp.create;
+  env.ctx.DocumentApp.create = () => { throw new Error('Sem autorização para o Google Docs'); };
+  const r = env.ok('concluirTarefa', dfd.id, '');
+  env.ctx.DocumentApp.create = criar;
+  assert.match(r.aviso, /Sem autorização para o Google Docs/);
+  assert.deepStrictEqual(ativas(env, p.id), ['CONSULTA_ETICE']);
+
+  // Instrução: o DFD sem assinaturas aparece como pendente, com os signatários
+  env.novaExecucao();
+  let item = env.ctx.Instrucao.verificar(env.ctx.repo('Processos').obter(p.id)).find((i) => i.codigo === 'DFD');
+  assert.ok(item.exigido && !item.ok && item.assinatura);
+  assert.strictEqual(item.signatarios, 'Secretário(a)');
+
+  // PDF anexado com assinatura parcial: fica em assinatura até registrar os demais
+  const anexo = env.ok('anexarDocumento', p.id, 'DFD', '', arquivo('DFD assinado.pdf'), { data: '2026-11-26', ordens: [] });
+  assert.strictEqual(anexo.status, 'EM_ASSINATURA');
+  const pend = env.ok('detalharProcesso', p.id).assinaturas.filter((a) => a.documentoId === anexo.id);
+  assert.deepStrictEqual(pend.map((a) => a.status), ['PENDENTE']);
+  env.ok('registrarAssinatura', pend[0].id, '2026-11-27');
+  assert.strictEqual(env.ok('detalharProcesso', p.id).documentos.find((d) => d.id === anexo.id).status, 'FINAL');
+  const etp = env.ok('anexarDocumento', p.id, 'ETP', '', arquivo('ETP.pdf'), { data: '2026-11-26', ordens: [1, 2, 3] });
+  assert.strictEqual(etp.status, 'FINAL', 'todos marcados: FINAL');
+  env.novaExecucao();
+  item = env.ctx.Instrucao.verificar(env.ctx.repo('Processos').obter(p.id)).find((i) => i.codigo === 'DFD');
+  assert.ok(item.ok);
+
+  // TR gerado com seções, anexos e a tabela de riscos
+  const docTr = env.ok('gerarDocumento', p.id, 'TR', '');
+  const texto = env.estado.docs[docTr.fileId].texto;
+  ['1) DO OBJETO', 'Objeto adiantado', '11) DA ADEQUAÇÃO ORÇAMENTÁRIA', 'ANEXO II – LEVANTAMENTO E ANÁLISE DE RISCOS',
+    'Risco | Probabilidade', 'Atraso na entrega | Média | Alto', 'Vigência (meses): 12'].forEach((t) =>
+    assert.ok(texto.includes(t), 'TR deveria conter: ' + t + '\n' + texto));
+
+  // Diagnóstico da geração de documentos (Administração)
+  const passos = env.ok('testarGeracaoDocumento');
+  assert.ok(passos.length >= 4 && passos.every((x) => x.ok), JSON.stringify(passos));
 });
 
 // ------------------------------------------------------------------ execução

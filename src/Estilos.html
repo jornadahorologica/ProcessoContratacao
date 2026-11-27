@@ -9,7 +9,7 @@
     --lateral-1: #0b2540; --lateral-2: #0a1f36; --menu-ativo: #0b2540;
     --verde: #0e9f6e; --verde-esc: #0b8a5f; --verde-c: #e7f7f0;
     --azul: #2563eb; --azul-esc: #1d4ed8; --azul-c: #eaf1ff;
-    --ambar: var(--ambar); --ambar-c: #fff7e6; --ambar-borda: #fde7c2; --ambar-forte: #f59e0b;
+    --ambar: #b45309; --ambar-c: #fff7e6; --ambar-borda: #fde7c2; --ambar-forte: #f59e0b;
     --vermelho: #b91c1c; --vermelho-c: #fdecec;
     --roxo: #6d28d9; --roxo-c: #f1ebff;
     --acao: #2563eb; --acao-verde: #0e9f6e; --acao-perigo: #b91c1c;
@@ -285,6 +285,23 @@
   details.secao .secao-corpo { padding: 0 14px 14px; }
   .multipla { display: grid; gap: 2px; padding: 6px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); background: var(--sup); }
   .dlg .detalhe .check { padding: 4px 0; }
+  .externos { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linha); }
+  .externos .rot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--suave); margin-right: 4px; }
+  .externos .logo-externo { padding: 5px 10px; font-size: 13px; }
+  .info-linha.adiantar { background: var(--ambar-c); }
+  .timeline .item.futura .txt b { color: var(--suave); font-weight: 500; }
+  .timeline .item.adiantada .bola { box-shadow: 0 0 0 2px var(--ambar-forte); }
+  .campo-tabela table { width: 100%; }
+  .campo-tabela td { padding: 4px; vertical-align: top; }
+  .campo-tabela td textarea { min-height: 54px; }
+  .campo-tabela td.acao-linha { width: 1%; }
+  .decisao-form { padding: 10px 12px; margin-bottom: 8px; border-radius: 10px; background: var(--sup-2); border: 1px solid var(--borda); }
+  .decisao-form label { margin-top: 0; }
+  .decisao-form .opcoes-decisao { display: flex; gap: 18px; }
+  h3.grupo-dados { margin: 14px 0 6px; font-size: 13px; color: var(--suave); text-transform: uppercase; letter-spacing: .03em; }
+  table.dados-etapa td:first-child { width: 42%; color: var(--suave); }
+  table.mini { font-size: 12px; } table.mini th, table.mini td { padding: 4px 6px; }
+  .texto-dado { white-space: pre-wrap; }
   .campo-da-secao { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--sup-2); border: 1px solid var(--borda); }
   .campo-da-secao label { margin-top: 0; }
   .logos-externos { flex-wrap: wrap; }

@@ -175,13 +175,17 @@ function montarHtml() {
   // Sugestão do DFD no inciso I
   await page.click('details[data-secao=etpNecessidade] [data-acao=usarSugestao]');
   if (!(await page.inputValue('[name=etpNecessidade]')).startsWith('Garantir a continuidade')) throw new Error('Sugestão não aplicada');
-  // Não se aplica no inciso XII
-  await page.check('[name=etpImpactosAmbientais_nsa]');
+  // Sem "Não se aplica": todos os itens são texto obrigatório
+  if (await page.$('[name=etpImpactosAmbientais_nsa]')) throw new Error('O ETP não deveria ter "Não se aplica"');
   await page.fill('[name=etpImpactosAmbientais]', 'Serviço de TI sem impacto ambiental relevante.');
   await page.selectOption('[name=contratadaEtice]', 'NAO');
   await page.click('text=Salvar dados');
   await esperarCarregar();
-  await page.waitForSelector('details[data-secao=etpImpactosAmbientais] .tag');
+  // Item 9: com o texto preenchido e o PCA ainda vazio, a seção continua aberta (campos de PCA visíveis)
+  await page.fill('[name=etpPrevisaoPca]', 'Item 12 do PCA 2026.');
+  await page.click('text=Salvar dados');
+  await esperarCarregar();
+  if (!(await page.isVisible('details[data-secao=etpPrevisaoPca] [name=itemPCA]'))) throw new Error('Item / referência no PCA deveria aparecer sem clicar em editar');
   await page.click('div:has(> [name=valorEstimadoEtp]) [data-acao=usarSugestao]');
   if (await page.inputValue('[name=valorEstimadoEtp]') !== '2400000') throw new Error('Sugestão de valor (média) incorreta');
   const textos = { etpPrevisaoPca: 'Item 12 do PCA 2026.', etpRequisitos: 'Equipe com experiência em Java.', etpQuantidades: '12.000 UST/ano.',
@@ -222,10 +226,44 @@ function montarHtml() {
   await page.waitForFunction(() => document.querySelectorAll('.timeline .item .bola').length > 0 &&
     /Natureza contínua|Pesquisar Código|Pesquisa de Preço/.test(document.querySelector('#area-trabalho h2')?.textContent || ''));
 
+  // Mudou de etapa: a tela volta para o topo
+  if (await page.evaluate(() => window.scrollY) > 0) throw new Error('Ao mudar de etapa a tela deveria ir para o topo');
+
+  // ---------------- Natureza contínua: a justificativa aparece na mesma tela quando a resposta é SIM
+  await page.goto('http://app.local/exec#/processo/' + p2.numero + '/etapa/NATUREZA');
+  await page.reload();
+  await page.waitForSelector('#bloco-decisao [name=naturezaContinua]');
+  if (await page.isVisible('details[data-secao=fundamentacaoContinuidade]')) throw new Error('Justificativa só deveria aparecer com SIM');
+  await page.check('#bloco-decisao [value=SIM]');
+  await page.waitForSelector('details[data-secao=fundamentacaoContinuidade]', { state: 'visible' });
+  await foto('15-natureza-justificativa');
+
+  // ---------------- Adiantar uma etapa futura (TR) com a tabela de riscos
+  await page.click('.timeline .item.futura:has-text("Elaborar TR")');
+  await page.waitForSelector('.info-linha.adiantar');
+  if (await page.$('[data-acao=concluir]')) throw new Error('Etapa adiantada não pode ser concluída');
+  await esperarHash('#/processo/' + p2.numero + '/etapa/TR');
+  await page.fill('[name=trObjeto]', 'Sustentação do SGS (adiantado)');
+  const risco = '.campo-tabela[data-tabela=trRiscos]';
+  await page.fill(risco + ' tr.linha-tab >> nth=0 >> [data-col=risco]', 'Atraso na entrega');
+  await page.click(risco + ' [data-acao=adicionarLinhaTab]');
+  await page.fill(risco + ' tr.linha-tab >> nth=1 >> [data-col=risco]', 'Rotatividade da equipe');
+  await page.selectOption(risco + ' tr.linha-tab >> nth=1 >> [data-col=impacto]', 'Alto');
+  await page.click('#bloco-form [data-acao=salvarCampos]');
+  await esperarCarregar();
+  if ((await page.$$(risco + ' tr.linha-tab')).length !== 2) throw new Error('Os 2 riscos deveriam ter sido salvos');
+  await page.waitForSelector('.timeline .item.adiantada:has-text("Elaborar TR")');
+  await foto('16-tr-adiantado-riscos');
+
   // ---------------- Pesquisa de preço: descarte com motivo e item padronizado
   await page.goto('http://app.local/exec#/processo/' + p2.numero + '/etapa/PESQUISA_PRECO');
   await page.reload();
   await page.waitForSelector('#bloco-cot [data-acao=considerarCotacao]');
+  // Cabeçalho: os sistemas de consulta ficam numa faixa própria, sem espremer o título
+  if ((await page.$$('.externos .logo-externo')).length !== 4) throw new Error('Pesquisa de preço deveria ter 4 sistemas de consulta');
+  const larguraTitulo = await page.$eval('#area-trabalho .topo-etapa h2', (h) => h.getBoundingClientRect().width);
+  if (larguraTitulo < 300) throw new Error('Título da etapa espremido (' + larguraTitulo + 'px)');
+  await foto('17-pesquisa-cabecalho');
   await page.click('#bloco-cot [data-acao=considerarCotacao] >> nth=1');
   await page.waitForSelector('#dialogo #dlg-campo');
   await page.click('#dialogo .pe .btn:last-child'); // sem motivo: não fecha
@@ -236,6 +274,7 @@ function montarHtml() {
   await esperarCarregar();
   await page.waitForSelector('#bloco-cot .ajuda:has-text("Descartada: Preço fora da média do mercado")');
   await page.click('#bloco-cot summary:has-text("Registrar cotação")');
+  if (await page.inputValue('#form-cot [name=unidade]') !== 'UST') throw new Error('Unidade deveria vir do DFD');
   await page.fill('#form-cot [name=item]', 'ust');
   await page.dispatchEvent('#form-cot [name=item]', 'change');
   if (await page.inputValue('#form-cot [name=quantidade]') !== '12000' || !(await page.$eval('#form-cot [name=quantidade]', (e) => e.readOnly))) {

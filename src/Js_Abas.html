@@ -33,8 +33,7 @@ function abaDados(alvo) {
   var p = S.det.processo;
   var ed = podeEditar();
   var dis = ed ? '' : ' disabled';
-  var vars = S.det.variaveis;
-  var chaves = Object.keys(vars).filter(function (k) { return k.indexOf('checklist.') !== 0; }).sort();
+  var grupos = S.det.camposPorEtapa || [];
   alvo.innerHTML = '<div class="grid g2"><div class="card" id="form-dados"><h2>Dados do processo</h2>' +
     '<label>Título</label><input name="titulo" value="' + esc(p.titulo) + '"' + dis + '>' +
     '<label>Objeto</label><textarea name="objeto"' + dis + '>' + esc(p.objeto) + '</textarea>' +
@@ -45,9 +44,27 @@ function abaDados(alvo) {
     datalistUsuarios() +
     '<p class="ajuda">Criado em ' + dataBR(p.criadoEm) + ' por ' + esc(nomeUsuario(p.criadoPor)) + '</p>' +
     (ed ? '<button class="btn" data-acao="salvarProcesso">Salvar</button>' : '') + '</div>' +
-    '<div class="card"><h2>Informações registradas nas etapas</h2>' + (chaves.length ? '<table><tr><th>Campo</th><th>Valor</th></tr>' +
-      chaves.map(function (k) { return '<tr><td>' + esc(k) + '</td><td>' + esc(vars[k]) + '</td></tr>'; }).join('') + '</table>' : '<div class="vazio">Nenhuma.</div>') +
+    '<div class="card"><h2>Informações registradas nas etapas</h2>' + (grupos.length ? grupos.map(function (g) {
+      return '<h3 class="grupo-dados">' + esc(g.nome) + '</h3><table class="dados-etapa">' + g.itens.map(function (i) {
+        return '<tr><td>' + esc(i.rotulo) + '</td><td>' + valorDado(i) + '</td></tr>';
+      }).join('') + '</table>';
+    }).join('') : '<div class="vazio">Nenhuma.</div>') +
     '</div></div>';
+}
+
+/** Valor formatado para leitura (moeda, data, Sim/Não, tabelas). */
+function valorDado(i) {
+  var v = i.valor;
+  if (i.tipo === 'tabela') {
+    var cols = colunasTabela(i), linhas = linhasTabela(i, v);
+    return linhas.length ? '<table class="mini"><tr>' + cols.map(function (c) { return '<th>' + esc(c.rotulo) + '</th>'; }).join('') + '</tr>' +
+      linhas.map(function (l) { return '<tr>' + cols.map(function (c) { return '<td>' + esc(l[c.chave]) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>' : '—';
+  }
+  if (i.tipo === 'moeda') return brl(v);
+  if (i.tipo === 'data') return dataBR(v);
+  if (i.tipo === 'simNao') return v === 'SIM' ? 'Sim' : v === 'NAO' ? 'Não' : esc(v);
+  if (i.tipo === 'inteiro' && !isNaN(Number(v))) return Number(v).toLocaleString('pt-BR');
+  return '<span class="texto-dado">' + esc(v) + '</span>';
 }
 
 // ---------- aba Histórico

@@ -47,6 +47,9 @@ function vAdmin() {
       '<p>Depois de editar a configuração, clique em:</p><button class="btn" data-acao="recarregarConfig">' + ic('atualizar', 15) + 'Recarregar configuração</button>' +
       '<p style="margin-top:18px">Acesso dos usuários às pastas dos processos no Drive (concedido automaticamente ao cadastrar/ativar usuários e ao criar processos):</p>' +
       '<button class="btn sec" data-acao="concederAcessoDrive">' + ic('pasta', 15) + 'Liberar acesso de todos às pastas</button>' +
+      '<p style="margin-top:18px">Se "Gerar a partir do modelo" não funcionar, teste a geração e veja o erro exato de cada passo:</p>' +
+      '<button class="btn sec" data-acao="testarGeracao">' + ic('doc', 15) + 'Testar geração de documento</button>' +
+      '<div id="log-teste-doc" class="oculto" style="margin-top:10px"></div>' +
       '<p class="ajuda">Versão ' + esc(S.ctx.versao) + '</p></div>' + cartaoAtualizacoes() + '</div>');
   });
 }

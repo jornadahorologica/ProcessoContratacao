@@ -391,6 +391,111 @@ var Migracoes = {
           ajuda: 'Marque todos os parâmetros utilizados (Lei 14.133/2021, art. 23, §1º).'
         });
       }
+    },
+    {
+      versao: 10,
+      descricao: 'Ajustes do PO: documentos gerados ao concluir (assinaturas cobradas na instrução), DFD preenchido com os dados ' +
+        'do processo, ETP sem "Não se aplica", natureza contínua e justificativa na mesma tela, TR em seções com mapa de riscos, ' +
+        'pré-reserva com dotações (Tesouro/BID), CECOC só com envio e "Documento com foto do assinante"',
+      aplicar: function (M) {
+        var F = 'CONTRATACAO';
+        var etapa = function (cod, alt) { if (repo('cfg_Etapas').obter(F + '.' + cod)) repo('cfg_Etapas').atualizar(F + '.' + cod, alt); };
+        var campo = function (etapaCod, id, o) {
+          M.upsert('cfg_Campos', Object.assign({
+            id: F + '.' + etapaCod + '.' + id, fluxoId: F, etapaCodigo: etapaCod, tipo: 'secaoLei', obrigatorio: true,
+            opcoes: '', ajuda: '', valorPadrao: '', linha: '', secao: '', condicao: ''
+          }, o));
+        };
+
+        // --- DFD: unidade demandante e necessidade vêm do "Novo processo" (editáveis)
+        M.ajustarCampo(F, 'DFD', 'unidadeDemandante', { valorPadrao: '[AUTO]{{setorDemandante}}' });
+        M.ajustarCampo(F, 'DFD', 'descricaoNecessidade', { valorPadrao: '[AUTO]{{objeto}}' });
+
+        // --- ETP: todos os itens obrigatórios, sem "Não se aplica"
+        repo('cfg_Campos').filtrar(function (c) { return c.fluxoId === F && c.etapaCodigo === 'ETP' && c.tipo === 'secaoLei'; })
+          .forEach(function (c) { repo('cfg_Campos').atualizar(c.id, { opcoes: '', obrigatorio: true }); });
+        M.ajustarCampo(F, 'ETP', 'contratadaEtice', {
+          ajuda: 'SIM = contratação direta com a ETICE (valor = proposta da ETICE; a instrução exige proposta, estatuto, CND, CRC, ' +
+            'documento com foto do assinante do contrato e comprovante de endereço). NÃO = licitação (valor = média das propostas recebidas).'
+        });
+        etapa('ETP', { descricao: 'Estudo Técnico Preliminar (Lei 14.133/2021, art. 18). Todos os itens são obrigatórios: quando um item ' +
+          'não se aplicar, escreva a justificativa no próprio texto. Ao concluir, o documento é gerado automaticamente.' });
+
+        // --- Natureza contínua + justificativa na mesma tela
+        var justif = repo('cfg_Campos').filtrar(function (c) {
+          return c.fluxoId === F && c.etapaCodigo === 'JUSTIFICATIVA' && c.chave === 'fundamentacaoContinuidade';
+        })[0] || {};
+        campo('NATUREZA', 'JUSTIF', {
+          chave: 'fundamentacaoContinuidade', rotulo: justif.rotulo || 'JUSTIFICATIVA DA NATUREZA CONTINUADA',
+          ajuda: justif.ajuda || '', valorPadrao: justif.valorPadrao || '', ordem: 10, condicao: 'naturezaContinua == SIM'
+        });
+        etapa('NATUREZA', {
+          nome: 'Natureza contínua e justificativa', blocos: 'F,A,B', documentoTipo: 'JUSTIFICATIVA',
+          descricao: 'O serviço/fornecimento é de natureza continuada? Se SIM, escreva a justificativa logo abaixo: o documento é ' +
+            'gerado ao concluir a etapa e assinado no SUITE.'
+        });
+        repo('cfg_Transicoes').filtrar(function (t) { return t.fluxoId === F && t.origem === 'NATUREZA'; }).forEach(function (t) {
+          if (t.destino === 'JUSTIFICATIVA') repo('cfg_Transicoes').remover(t.id);
+          else repo('cfg_Transicoes').atualizar(t.id, { condicao: '', rotulo: '' });
+        });
+        etapa('JUSTIFICATIVA', { descricao: 'Etapa incorporada à "Natureza contínua e justificativa" (mantida só para processos antigos).' });
+
+        // --- TR: seções do Termo de Referência da CESOP + anexos
+        var secoesTr = [
+          ['trObjeto', '1) DO OBJETO', '{{objeto}}'],
+          ['trEspecificacoes', '2) DAS ESPECIFICAÇÕES, QUANTITATIVOS E ESTIMATIVA DO VALOR DA CONTRATAÇÃO', '{{etpQuantidades}}'],
+          ['trVigencia', '3) DO PRAZO DE VIGÊNCIA E PRORROGAÇÃO', ''],
+          ['trNecessidade', '4) DA DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO', '{{etpNecessidade}}'],
+          ['trSolucao', '5) DESCRIÇÃO DA SOLUÇÃO COMO UM TODO CONSIDERANDO TODO O CICLO DE VIDA DO OBJETO', '{{etpSolucao}}'],
+          ['trExecucao', '6) DA EXECUÇÃO DO OBJETO', ''],
+          ['trGestao', '7) MODELO DE GESTÃO DO CONTRATO', ''],
+          ['trRecebimentoPagamento', '8) CONDIÇÕES DE RECEBIMENTO E DE PAGAMENTO', ''],
+          ['trObrigacoesContratante', '9) DAS OBRIGAÇÕES DO CONTRATANTE', ''],
+          ['trObrigacoesContratado', '10) DAS OBRIGAÇÕES DO CONTRATADO', ''],
+          ['trAdequacaoOrcamentaria', '11) DA ADEQUAÇÃO ORÇAMENTÁRIA', '']
+        ];
+        var ordem = 600;
+        secoesTr.forEach(function (x) {
+          campo('TR', x[0], { chave: x[0], rotulo: x[1], valorPadrao: x[2], ordem: ordem++ });
+          if (x[0] === 'trVigencia') {
+            M.ajustarCampo(F, 'TR', 'vigenciaMeses', { rotulo: 'Vigência (meses)', tipo: 'inteiro', secao: 'trVigencia', ordem: ordem++ });
+          }
+        });
+        M.ajustarCampo(F, 'TR', 'especificacaoTecnica', {
+          rotulo: '12) ANEXO I – ESPECIFICAÇÃO TÉCNICA DO OBJETO', tipo: 'secaoLei', obrigatorio: true, ordem: ordem++, ajuda: ''
+        });
+        campo('TR', 'RISCOS', {
+          chave: 'trRiscos', rotulo: '12) ANEXO II – LEVANTAMENTO E ANÁLISE DE RISCOS', tipo: 'tabela', ordem: ordem++,
+          opcoes: 'risco|Risco|textoLongo;probabilidade|Probabilidade|selecao|Baixa,Média,Alta;impacto|Impacto|selecao|Baixo,Médio,Alto;' +
+            'preventiva|Ação preventiva|textoLongo;contingencia|Ação de contingência|textoLongo;responsavel|Responsável|texto',
+          ajuda: 'Inclua quantos riscos forem necessários (ao menos um).'
+        });
+        M.ajustarCampo(F, 'TR', 'sla', {
+          rotulo: '12) ANEXO III – ACORDO DE NÍVEIS DE SERVIÇO (ANS)', tipo: 'secaoLei', obrigatorio: false, ordem: ordem++, ajuda: ''
+        });
+        M.remover('cfg_ChecklistItens', function (i) { return i.fluxoId === F && i.etapaCodigo === 'TR'; });
+        etapa('TR', { blocos: 'A,B', descricao: 'Termo de Referência em seções (Lei 14.133/2021, art. 6º, XXIII). O ETP é o anexo IV ' +
+          '(já juntado ao processo). Ao concluir, o documento é gerado automaticamente.' });
+
+        // --- Pré-reserva: uma ou mais dotações, com a fonte (Tesouro / BID)
+        M.remover('cfg_Campos', function (c) { return c.fluxoId === F && c.etapaCodigo === 'PRE_RESERVA' && c.chave === 'numeroPreReserva'; });
+        campo('PRE_RESERVA', 'DOTACOES', {
+          chave: 'dotacoes', rotulo: 'Código(s) da(s) Dotação(ões) Orçamentária(s)', tipo: 'tabela', ordem: 1,
+          opcoes: 'codigo|Código da dotação orçamentária|texto;fonte|Fonte|selecao|Tesouro,BID',
+          ajuda: 'Uma linha por dotação.'
+        });
+
+        // --- Instrução: documento de identificação
+        if (repo('cfg_DocumentosTipo').obter('ETICE_CNH')) {
+          repo('cfg_DocumentosTipo').atualizar('ETICE_CNH', { nome: 'Documento com foto do assinante do contrato' });
+        }
+
+        // --- CECOC: basta registrar o envio (se estiver OK, segue para a ASJUR e não volta)
+        etapa('ENVIO_CECOC', {
+          blocos: 'N,B', descricao: 'Registrar o envio do processo instruído à CECOC. Não é preciso aguardar retorno: pendências da ' +
+            'CECOC entram na aba Diligências. Pregão: segue para a análise das propostas recebidas. Contratação direta: o processo é encerrado no sistema.'
+        });
+      }
     }
   ]
 };

@@ -42,17 +42,24 @@ var API = {
   alterarStatusProcesso: ['G', function (id, status, motivo) { return ProcessoService.alterarStatus(id, status, motivo); }],
 
   abrirTarefa: ['L', function (id) { return ProcessoService.abrirTarefa(id); }],
+  abrirEtapa: ['L', function (processoId, etapa) { return ProcessoService.abrirEtapaFutura(processoId, etapa); }],
+  salvarCamposEtapa: ['E', function (processoId, etapa, valores) { return ProcessoService.salvarCamposEtapa(processoId, etapa, valores); }],
+  marcarChecklistEtapa: ['E', function (processoId, etapa, itemId, marcado) { return ProcessoService.marcarChecklistEtapa(processoId, etapa, itemId, marcado); }],
   salvarCampos: ['E', function (id, valores) { return ProcessoService.salvarCampos(id, valores); }],
   marcarChecklist: ['E', function (id, itemId, marcado) { return ProcessoService.marcarChecklist(id, itemId, marcado); }],
   registrarEnvio: ['E', function (id, ref, data) { Workflow.registrarEnvio(id, ref, data); return true; }],
   registrarRetorno: ['E', function (id, ref, data) { Workflow.registrarRetorno(id, ref, data); return true; }],
-  concluirTarefa: ['E', function (id, obs) { Workflow.concluir(id, obs); return true; }],
+  concluirTarefa: ['E', function (id, obs) { return Workflow.concluir(id, obs); }],
   devolverTarefa: ['E', function (id, destino, motivo) { Workflow.devolver(id, destino, motivo); return true; }],
   atribuirTarefa: ['E', function (id, email) { Workflow.atribuir(id, email); return true; }],
 
   gerarDocumento: ['E', function (processoId, tipo, tarefaId) { return DocumentoService.gerar(processoId, tipo, tarefaId); }],
-  anexarDocumento: ['E', function (processoId, tipo, tarefaId, arquivo) { return DocumentoService.anexar(processoId, tipo, tarefaId, arquivo); }],
-  vincularDocumento: ['E', function (processoId, tipo, tarefaId, link, mover) { return DocumentoService.vincular(processoId, tipo, tarefaId, link, mover); }],
+  anexarDocumento: ['E', function (processoId, tipo, tarefaId, arquivo, assinaturas) {
+    return DocumentoService.anexar(processoId, tipo, tarefaId, arquivo, assinaturas);
+  }],
+  vincularDocumento: ['E', function (processoId, tipo, tarefaId, link, mover, assinaturas) {
+    return DocumentoService.vincular(processoId, tipo, tarefaId, link, mover, assinaturas);
+  }],
   alterarStatusDocumento: ['E', function (id, status) { return DocumentoService.alterarStatus(id, status); }],
   enviarParaAssinatura: ['E', function (documentoId) { return AssinaturaService.enviar(documentoId); }],
   registrarAssinatura: ['E', function (assinaturaId, data) { return AssinaturaService.registrar(assinaturaId, data); }],
@@ -86,6 +93,7 @@ var API = {
   concederAcessoDrive: ['A', function () {
     return DriveService.compartilhar(DriveService.pastasDosProcessos(), DriveService.emailsAtivos());
   }],
+  testarGeracaoDocumento: ['A', function () { return DocumentoService.testarGeracao(); }],
   recarregarConfig: ['A', function () { ConfigService.limparCache(); return true; }],
   situacaoConfiguracao: ['A', function () { return Migracoes.situacao(); }],
   atualizarConfiguracao: ['A', function () { return atualizarConfiguracao_(); }]
@@ -96,7 +104,7 @@ var NIVEIS_ESCRITA = { E: true, G: true, A: true };
 /** Abas lidas numa única chamada no início de cada operação (com o serviço avançado). */
 var TABELAS_OPERACAO = ['Processos', 'Tarefas', 'Variaveis', 'Documentos', 'Assinaturas', 'PesquisaPrecos', 'Diligencias'];
 var SEM_PRECARGA = { contexto: true, recarregarConfig: true, situacaoConfiguracao: true, atualizarConfiguracao: true,
-  listarUsuarios: true, salvarUsuario: true, historicoProcesso: true, concederAcessoDrive: true };
+  listarUsuarios: true, salvarUsuario: true, historicoProcesso: true, concederAcessoDrive: true, testarGeracaoDocumento: true };
 
 /**
  * Ponto de entrada único do front-end. Retorna JSON (string) no formato

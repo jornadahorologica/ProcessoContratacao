@@ -10,9 +10,10 @@ function aplicarTela(tela) {
   S.det = tela.detalhe;
   S.procId = tela.detalhe.processo.id; // a URL pode trazer o número; daqui em diante usa o id interno
   S.tarefaId = tela.tarefaId;
+  S.etapaFutura = tela.etapaFutura || null;
   S.tar = tela.tarefa;
   S.autoSelecionada = tela.auto;
-  if (tela.etapaNaoIniciada) toast('A etapa "' + tela.etapaNaoIniciada + '" ainda não foi iniciada neste processo.', true);
+  if (tela.etapaNaoIniciada) toast('A etapa "' + tela.etapaNaoIniciada + '" não existe neste processo.', true);
   S.etapaRota = null;
   renderProcesso();
   return renderAba();
@@ -83,21 +84,29 @@ function abaFluxo(alvo) {
     if (e.status === 'CONCLUIDA') return 'Concluída' + (e.concluidaEm ? ' em ' + dataBR(e.concluidaEm.slice(0, 10)) : '');
     if (e.status === 'ABERTA') return 'Em andamento' + (e.prazo ? ' · prazo ' + dataBR(e.prazo) : '');
     if (e.status === 'AGUARDANDO_RETORNO') return 'Aguardando retorno';
-    if (e.status === 'NAO_INICIADA') return 'Não iniciada';
+    if (e.status === 'NAO_INICIADA') return e.adiantada ? 'Não iniciada · adiantada' : 'Não iniciada';
     return ROTULOS[e.status] || e.status;
   };
   var tl = porFase.map(function (g) {
     return '<div class="fase">' + esc(nomeFase(g.fase)) + '</div>' + g.itens.map(function (e, i) {
       n++;
-      var clic = e.tarefaId ? ' data-acao="selTarefa" data-tarefa="' + esc(e.tarefaId) + '"' : '';
-      return '<div class="item ' + esc(e.status) + (e.tarefaId ? '' : ' inativo') + (e.tarefaId && e.tarefaId === S.tarefaId ? ' sel' : '') +
+      // Etapa não iniciada: abre para adiantar o preenchimento
+      var futura = !e.tarefaId && det.processo.status === 'EM_ANDAMENTO';
+      var clic = e.tarefaId ? ' data-acao="selTarefa" data-tarefa="' + esc(e.tarefaId) + '"' :
+        futura ? ' data-acao="selEtapa" data-etapa="' + esc(e.codigo) + '" title="Adiantar o preenchimento desta etapa"' : '';
+      var sel = (e.tarefaId && e.tarefaId === S.tarefaId) || (!e.tarefaId && e.codigo === S.etapaFutura);
+      return '<div class="item ' + esc(e.status) + (e.tarefaId || futura ? '' : ' inativo') + (futura ? ' futura' : '') + (e.adiantada ? ' adiantada' : '') + (sel ? ' sel' : '') +
         (i === g.itens.length - 1 ? ' ultimo' : '') + '"' + clic + '>' +
         '<span class="bola">' + (e.status === 'CONCLUIDA' ? ic('check', 14) : n) + '</span>' +
         '<span class="txt"><b>' + esc(e.nome) + (e.instancias > 1 ? ' <span class="ajuda">(' + e.instancias + 'x)</span>' : '') + '</b><small>' + sub(e) + '</small></span></div>';
     }).join('');
   }).join('');
   alvo.innerHTML = '<div class="fluxo"><div class="card timeline"><h2>Etapas</h2>' + tl + '</div>' +
-    '<div id="area-trabalho">' + (S.tarefaId ? '<div class="carregando">Carregando etapa…</div>' : '<div class="card vazio">Selecione uma etapa.</div>') + '</div></div>';
+    '<div id="area-trabalho">' + (S.tarefaId || S.etapaFutura ? '<div class="carregando">Carregando etapa…</div>' : '<div class="card vazio">Selecione uma etapa.</div>') + '</div></div>';
+  if (S.etapaFutura) {
+    if (S.tar && S.tar.tarefa && !S.tar.tarefa.id && S.tar.etapa.codigo === S.etapaFutura) return renderTrabalho();
+    return carregarEtapaFutura(S.etapaFutura);
+  }
   if (!S.tarefaId) return;
   if (S.tar && S.tar.tarefa && S.tar.tarefa.id === S.tarefaId) return renderTrabalho(); // já veio na resposta
   return carregarTarefa(S.tarefaId);
@@ -105,8 +114,18 @@ function abaFluxo(alvo) {
 
 function carregarTarefa(id) {
   S.tarefaId = id;
+  S.etapaFutura = null;
   $$('.timeline .item').forEach(function (el) { el.classList.toggle('sel', el.dataset.tarefa === id); });
   return api('abrirTarefa', id).then(function (w) { S.tar = w; renderTrabalho(); })
+    .catch(function (e) { $('#area-trabalho').innerHTML = '<div class="card">Erro: ' + esc(e.message) + '</div>'; });
+}
+
+/** Etapa que ainda não começou: abre a área de trabalho para adiantar o preenchimento. */
+function carregarEtapaFutura(codigo) {
+  S.tarefaId = null;
+  S.etapaFutura = codigo;
+  $$('.timeline .item').forEach(function (el) { el.classList.toggle('sel', el.dataset.etapa === codigo); });
+  return api('abrirEtapa', S.procId, codigo).then(function (w) { S.tar = w; renderTrabalho(); })
     .catch(function (e) { $('#area-trabalho').innerHTML = '<div class="card">Erro: ' + esc(e.message) + '</div>'; });
 }
 
@@ -125,7 +144,13 @@ function alvoPendencia(txt) {
 
 function renderTrabalho() {
   var w = S.tar, t = w.tarefa, e = w.etapa;
-  var ed = w.ativa && podeEditar();
+  var ed = (w.ativa || w.antecipada) && podeEditar();
+  // Mesma etapa (ex.: depois de salvar): mantém as seções que o usuário deixou abertas; outra etapa: vai para o topo
+  var chave = (t.id || 'futura:' + e.codigo);
+  var mesma = S._etapaRenderizada === chave;
+  S.secoesAbertas = {};
+  if (mesma) $$('#bloco-form details.secao[open]').forEach(function (d) { S.secoesAbertas[d.dataset.secao] = true; });
+  S._etapaRenderizada = chave;
   var concluida = t.status === 'CONCLUIDA';
   var icone = e.tipo === 'DECISAO' ? 'decisao' : w.blocos.indexOf('D') >= 0 ? 'enviar' : w.blocos.indexOf('E') >= 0 || w.blocos.indexOf('M') >= 0 ? 'grafico' :
     w.blocos.indexOf('I') >= 0 ? 'tarefas' : 'doc';
@@ -136,18 +161,26 @@ function renderTrabalho() {
       (d < 0 ? 'Atrasada há ' + (-d) + ' dia(s)' : d === 0 ? 'Vence hoje' : 'Prazo em ' + d + ' dia(s) · ' + dataBR(t.prazo)) + '</span>');
   }
   if (t.setor) chips.push('<span class="chip">' + ic('usuario', 13) + esc(t.setor) + '</span>');
+  if (w.antecipada) chips.push('<span class="chip ambar">' + ic('relogio', 13) + 'Adiantando: a etapa ainda não começou</span>');
   if (t.concluidaEm) chips.push('<span class="chip verde">' + ic('check', 13) + 'Encerrada em ' + dataBR(t.concluidaEm) + ' por ' + esc(nomeUsuario(t.concluidaPor)) + '</span>');
 
   var cab = '<div class="card"><div class="topo-etapa' + (concluida ? ' concluida' : '') + '"><div class="ib">' + ic(concluida ? 'check' : icone, 22) + '</div>' +
     '<div style="flex:1;min-width:0"><h2>' + esc(e.nome) + '</h2>' + (e.descricao ? '<p>' + esc(e.descricao) + '</p>' : '') +
     '<div class="chips">' + chips.join('') + '</div>' +
     (t.observacao ? '<p style="margin-top:10px">' + ic('editar', 14) + ' ' + esc(t.observacao) + '</p>' : '') + '</div>' +
-    '<div class="lado">' + (logosExternos(e.codigo) ? '<div class="logos-externos">' + logosExternos(e.codigo) + '</div>' : '') +
-    '<label>Analista responsável</label>' +
-    (ed ? '<select id="sel-resp" data-change="atribuir">' + opcoesUsuarios(t.responsavelEmail) + '</select>' : '<div class="chip">' + esc(nomeUsuario(t.responsavelEmail)) + '</div>') +
-    '</div></div></div>';
+    (t.id ? '<div class="lado"><label>Analista responsável</label>' +
+      (w.ativa && podeEditar() ? '<select id="sel-resp" data-change="atribuir">' + opcoesUsuarios(t.responsavelEmail) + '</select>' :
+        '<div class="chip">' + esc(nomeUsuario(t.responsavelEmail)) + '</div>') + '</div>' : '') +
+    '</div>' +
+    // Sistemas de apoio da etapa numa faixa própria (vários botões não quebram o cabeçalho)
+    (logosExternos(e.codigo) ? '<div class="externos"><span class="rot">' + ic('link', 14) + 'Consultar</span>' + logosExternos(e.codigo) + '</div>' : '') +
+    '</div>';
 
   var pend = '';
+  if (w.antecipada) {
+    pend = '<div class="info-linha adiantar">' + ic('info', 16) + '<span><b>Etapa ainda não iniciada.</b> Você pode adiantar o preenchimento: ' +
+      'os dados, documentos e checklist ficam salvos e a etapa já começa pronta quando chegar a vez dela. Concluir só será possível quando ela começar.</span></div>';
+  }
   if (w.ativa) {
     pend = w.pendencias.length
       ? '<div class="pend"><div class="cab">' + ic('alerta', 18) + 'Para concluir esta etapa<span class="qtd">' + w.pendencias.length + ' pendência(s)</span></div><ul>' +
@@ -163,7 +196,7 @@ function renderTrabalho() {
   var blocos = w.blocos.map(function (b) { return html[b] ? html[b](w, ed) : ''; }).join('');
 
   var rodape = '';
-  if (ed) {
+  if (ed && w.ativa) {
     rodape = '<div class="card"><div class="rodape-etapa"><div class="obs"><label>Observação ao concluir (opcional)</label><input id="obs-concluir" placeholder="Registrada no histórico"></div>' +
       '<button class="btn verde" data-acao="concluir"' + (w.pendencias.length ? ' disabled title="Resolva as pendências acima"' : '') + '>' + ic('check', 16) + 'Concluir etapa</button></div>' +
       (w.destinosDevolucao.length ? '<details class="devolver"><summary>Devolver para uma etapa anterior</summary><div class="linha" style="align-items:flex-end">' +
@@ -173,5 +206,6 @@ function renderTrabalho() {
         '<div style="flex:0 0 auto"><button class="btn perigo" data-acao="devolver">' + ic('voltar', 16) + 'Devolver</button></div></div></details>' : '') + '</div>';
   }
   $('#area-trabalho').innerHTML = cab + pend + blocos + rodape;
+  if (!mesma) window.scrollTo({ top: 0, behavior: 'auto' });
 }
 </script>

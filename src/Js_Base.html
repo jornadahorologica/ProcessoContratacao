@@ -26,7 +26,8 @@ function api(metodo) {
  * atualizada (processo + etapa). opcoes.auto = escolher a etapa atual (após concluir/devolver).
  */
 function acaoTela(metodo, args, msgOk, opcoes) {
-  var tela = { processoId: S.procId, tarefaId: opcoes && opcoes.auto ? null : S.tarefaId, aba: S.aba };
+  var auto = opcoes && opcoes.auto;
+  var tela = { processoId: S.procId, tarefaId: auto ? null : S.tarefaId, etapa: auto || S.tarefaId ? null : S.etapaFutura, aba: S.aba };
   return ocupado(chamar_(metodo, args, tela), msgOk).then(function (r) {
     aplicarTela(r.tela);
     Rotas.atualizar(true);
@@ -281,6 +282,14 @@ function valoresForm(raiz) {
     if (el.dataset.multi) { v[el.name] = v[el.name] || []; if (el.checked) v[el.name].push(el.value); return; }
     if (el.type === 'checkbox') { v[el.name] = el.checked; return; }
     v[el.name] = el.value;
+  });
+  // Campos "tabela": uma lista de linhas {coluna: valor}
+  $$('[data-tabela]', raiz).forEach(function (box) {
+    v[box.dataset.tabela] = $$('tr.linha-tab', box).map(function (tr) {
+      var o = {};
+      $$('[data-col]', tr).forEach(function (el) { o[el.dataset.col] = el.value; });
+      return o;
+    });
   });
   return v;
 }
